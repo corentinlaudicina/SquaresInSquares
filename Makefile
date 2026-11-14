@@ -72,7 +72,7 @@ check: test
 	./$(BUILD)/test_symmetry
 	./$(BUILD)/test_legalize
 	./$(BUILD)/test_schedule
-	python3 -m unittest tools/test_validate.py tools/test_runner.py
+	python3 -m unittest tools/test_validate.py tools/test_runner.py tools/test_benchmark.py
 
 $(OBJ)/%.o: %.cpp
 	@mkdir -p $(dir $@)
