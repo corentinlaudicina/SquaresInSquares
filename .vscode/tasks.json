@@ -1,0 +1,30 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "make check (build + run every test)",
+            "type": "shell",
+            "command": "make check",
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": ["$gcc"],
+            "group": { "kind": "build", "isDefault": true },
+            "detail": "The one target that proves the tests pass. See the Makefile."
+        },
+        {
+            "label": "make all (tests + both drivers)",
+            "type": "shell",
+            "command": "make all",
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": ["$gcc"],
+            "group": "build"
+        },
+        {
+            "label": "make debug (address + UB sanitizers)",
+            "type": "shell",
+            "command": "make debug",
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": ["$gcc"],
+            "group": "build"
+        }
+    ]
+}
