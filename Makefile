@@ -33,17 +33,22 @@ MAIN_SRC := $(CORE) $(RELAX) $(LNM) src/main.cpp
 SHRINK_SRC   := $(CORE) $(RELAX) $(LNM) src/main_shrink.cpp
 COMPRESS_SRC := $(CORE) $(RELAX) $(LNM) src/main_compress.cpp
 # The engine: the protocols as a library, legalization, sqpack/1 I/O. See docs/AUDIT.md.
+# The population layer: penalty kernel, capped L-BFGS, batch backend.
+POP_LIB := src/pop/penalty.cpp src/pop/relax_capped.cpp src/pop/backend.cpp src/pop/moves.cpp src/pop/diversity.cpp src/pop/ga.cpp
 ENGINE_LIB := src/legalize.cpp src/engine/protocol.cpp src/engine/solution_io.cpp src/engine/schedule.cpp
-ENGINE_SRC := $(CORE) $(RELAX) $(LNM) $(ENGINE_LIB) src/main_engine.cpp
+ENGINE_SRC := $(CORE) $(RELAX) $(LNM) $(ENGINE_LIB) $(POP_LIB) src/main_engine.cpp
 LEGALIZE_SRC := $(CORE) $(RELAX) src/legalize.cpp tests/test_legalize.cpp
-SCHEDULE_SRC := $(CORE) $(RELAX) $(LNM) src/engine/protocol.cpp src/engine/schedule.cpp tests/test_schedule.cpp
+BENCH_SRC := $(CORE) $(RELAX) src/legalize.cpp $(POP_LIB) src/engine/solution_io.cpp src/bench_relax.cpp
+GA_SRC := $(CORE) $(RELAX) src/legalize.cpp $(POP_LIB) tests/test_ga.cpp
+POP_SRC := $(CORE) $(RELAX) src/legalize.cpp $(POP_LIB) tests/test_pop.cpp
+SCHEDULE_SRC := $(CORE) $(RELAX) $(LNM) src/legalize.cpp $(POP_LIB) src/engine/protocol.cpp src/engine/schedule.cpp tests/test_schedule.cpp
 # shortcut: stamped when main_engine.o is compiled, so it can lag a commit; `make clean engine` before a release run.
 GIT_REV := $(shell git describe --always --dirty 2>/dev/null || echo unknown)
 
 o  = $(1:%.cpp=$(OBJ)/%.o)
 do = $(1:%.cpp=$(DOBJ)/%.o)
 
-ALL_OBJ := $(call o,$(POLY_SRC) $(IO_SRC) $(SYS_SRC) $(RELAX_SRC) $(LNM_SRC) $(MERGE_SRC) $(SYMMETRY_SRC) $(MAIN_SRC) $(SHRINK_SRC) $(COMPRESS_SRC) $(ENGINE_SRC) $(LEGALIZE_SRC) $(SCHEDULE_SRC))
+ALL_OBJ := $(call o,$(POLY_SRC) $(IO_SRC) $(SYS_SRC) $(RELAX_SRC) $(LNM_SRC) $(MERGE_SRC) $(SYMMETRY_SRC) $(MAIN_SRC) $(SHRINK_SRC) $(COMPRESS_SRC) $(ENGINE_SRC) $(LEGALIZE_SRC) $(SCHEDULE_SRC) $(POP_SRC) $(BENCH_SRC) $(GA_SRC))
 ALL_DOBJ := $(call do,$(POLY_SRC) $(IO_SRC) $(SYS_SRC) $(RELAX_SRC) $(LNM_SRC) $(MERGE_SRC) $(SYMMETRY_SRC))
 
 all: test squares shrink compress engine
@@ -51,11 +56,12 @@ all: test squares shrink compress engine
 test:      $(BUILD)/test_polygon $(BUILD)/test_io $(BUILD)/test_system \
            $(BUILD)/test_relax $(BUILD)/test_lnm \
            $(BUILD)/test_merge $(BUILD)/test_symmetry $(BUILD)/test_legalize \
-           $(BUILD)/test_schedule
+           $(BUILD)/test_schedule $(BUILD)/test_pop $(BUILD)/test_ga
 squares:   $(BUILD)/squares
 shrink:    $(BUILD)/squares_shrink
 compress:  $(BUILD)/squares_compress
 engine:    $(BUILD)/engine
+bench:     $(BUILD)/bench_relax
 debug:     $(BUILD)/test_polygon_debug $(BUILD)/test_io_debug \
            $(BUILD)/test_system_debug $(BUILD)/test_relax_debug \
            $(BUILD)/test_lnm_debug \
@@ -72,7 +78,9 @@ check: test
 	./$(BUILD)/test_symmetry
 	./$(BUILD)/test_legalize
 	./$(BUILD)/test_schedule
-	python3 -m unittest tools/test_validate.py tools/test_runner.py tools/test_benchmark.py
+	./$(BUILD)/test_pop
+	./$(BUILD)/test_ga
+	python3 -m unittest tools/test_validate.py tools/test_runner.py tools/test_benchmark.py tools/test_engine.py
 
 $(OBJ)/%.o: %.cpp
 	@mkdir -p $(dir $@)
@@ -118,6 +126,15 @@ $(BUILD)/engine: $(call o,$(ENGINE_SRC))
 $(BUILD)/test_legalize: $(call o,$(LEGALIZE_SRC))
 	$(CXX) $(CXXFLAGS) $^ -o $@
 
+$(BUILD)/bench_relax: $(call o,$(BENCH_SRC))
+	$(CXX) $(CXXFLAGS) $^ -o $@
+
+$(BUILD)/test_ga: $(call o,$(GA_SRC))
+	$(CXX) $(CXXFLAGS) $^ -o $@
+
+$(BUILD)/test_pop: $(call o,$(POP_SRC))
+	$(CXX) $(CXXFLAGS) $^ -o $@
+
 $(BUILD)/test_schedule: $(call o,$(SCHEDULE_SRC))
 	$(CXX) $(CXXFLAGS) $^ -o $@
 
@@ -153,4 +170,4 @@ clean:
 acceptance: shrink compress engine
 	python3 tests/acceptance.py
 
-.PHONY: acceptance all test squares shrink compress engine debug check clean
+.PHONY: bench acceptance all test squares shrink compress engine debug check clean

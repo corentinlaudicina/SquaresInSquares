@@ -12,6 +12,8 @@
 
 #include "moves/lnm.hpp"
 #include "moves/mc.hpp"
+#include "pop/ga.hpp"
+#include "pop/relax_capped.hpp"
 #include "system.hpp"
 
 #include <nlohmann/json.hpp>
@@ -35,7 +37,7 @@ struct KickConfig {
 };
 
 struct EngineConfig {
-    std::string mode = "shrink";  // "shrink" (main_shrink) | "cycle" (main_compress)
+    std::string mode = "shrink";  // "shrink" (main_shrink) | "cycle" (main_compress) | "ga" (pop/ga.hpp)
 
     // Start: mirror the seed through the main diagonal, relax, compress.
     bool mirror = true;
@@ -46,12 +48,32 @@ struct EngineConfig {
 
     // shrink mode
     double eps = 1e-3, eps_min = 1e-7, eps_max = 0.05, eps_up = 1.2, eps_down = 0.95;
+    int on_converge = 0;  // eps below eps_min: 0 = stop (the old driver), 1 = reset eps to `eps` and go on
 
     // cycle mode
     double cycle_ds = 0.005;
     long cycle_max_relax = 5000;
     double side_T = 0.01;         // Metropolis temperature on the side, in units of L / sqrt(n)
     long restart_after = 200;     // stagnant cycles before returning to the best
+
+    // Acceptance on the legal side: a candidate that beats the best is legalized (legalize.hpp) and
+    // kept only if its legal side still beats it, so the search optimises what best/ will accept.
+    // Off = the old drivers' behaviour (accept on the area-certified side).
+    bool accept_legal = false;
+
+    // The fixed-box relaxation in shrink mode: 0 = relax() (L-BFGS + line search, area penalty,
+    // the old behaviour), 1 = relax_capped() (pop/relax_capped.hpp) with the settings below.
+    int relax_method = 0;
+    int relax_penalty = 1;        // 0 = area2, 1 = depth2
+    int relax_history = 3;
+    double relax_tol = 1e-12;
+    double relax_rough_cap = 0.05;
+    long relax_rough_iters = 150;
+    double relax_fine_cap = 0.0125;  // first fine stage; each next one is 4x smaller
+    long relax_fine_iters = 150;
+    long relax_fine_stages = 3;
+
+    GAConfig ga;                  // mode "ga": population, moves, ratchet, diversity (budget: kicks = generations)
 
     bool propagate = false;       // the in-memory per-n pool (symmetry.hpp)
     long propagate_every = 1;
@@ -72,8 +94,11 @@ struct EngineResult {
     nlohmann::json telemetry;
 };
 
+CappedParams capped_params(const EngineConfig& c);
+
 EngineConfig shrink_defaults();
 EngineConfig cycle_defaults();  // main_compress.cpp's constants
+EngineConfig ga_defaults();     // GA mode: no mirror (symmetric genotypes are Phase 3 item 8)
 
 EngineResult run_engine(const System& seed, const EngineConfig& cfg, unsigned long long seed_value);
 

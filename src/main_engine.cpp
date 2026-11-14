@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
     if (n < 1) usage("--N is required");
     if (out.empty()) usage("--out is required");
     if (time_s <= 0.0 && kicks <= 0) usage("give --time and/or --kicks");
-    if (mode != "shrink" && mode != "cycle") usage("--mode must be shrink or cycle");
+    if (mode != "shrink" && mode != "cycle" && mode != "ga") usage("--mode must be shrink, cycle or ga");
     if (start.empty()) {
         char p[64];
         std::snprintf(p, sizeof p, "data/init_external/n%04d.cfg", n);
@@ -112,7 +112,7 @@ int main(int argc, char** argv) {
     if (!seed_sys) usage(why);
     if (static_cast<int>(seed_sys->particles.size()) != n) usage(start + " does not hold N squares");
 
-    EngineConfig cfg = mode == "cycle" ? cycle_defaults() : shrink_defaults();
+    EngineConfig cfg = mode == "cycle" ? cycle_defaults() : mode == "ga" ? ga_defaults() : shrink_defaults();
     json sched_info = {{"name", "builtin-" + mode}};
     if (!schedule.empty()) {
         auto ps = load_schedule(schedule, &why);

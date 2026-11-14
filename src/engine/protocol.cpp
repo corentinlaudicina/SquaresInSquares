@@ -3,6 +3,8 @@
 #include "moves/mc.hpp"
 #include "moves/relax.hpp"
 #include "moves/symmetry.hpp"
+#include "legalize.hpp"
+#include "pop/backend.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -68,6 +70,17 @@ double large_prob(const KickConfig& k, long stuck) {
 
 }  // namespace
 
+CappedParams capped_params(const EngineConfig& c) {
+    CappedParams p;
+    p.penalty = c.relax_penalty == 0 ? Penalty::Area2 : Penalty::Depth2;
+    p.history = c.relax_history;
+    p.tol = c.relax_tol;
+    p.stages = {{c.relax_rough_cap, static_cast<int>(c.relax_rough_iters)}};
+    double cap = c.relax_fine_cap;
+    for (long k = 0; k < c.relax_fine_stages; ++k, cap *= 0.25) p.stages.push_back({cap, static_cast<int>(c.relax_fine_iters)});
+    return p;
+}
+
 EngineConfig shrink_defaults() { return EngineConfig{}; }
 
 EngineConfig cycle_defaults() {
@@ -77,7 +90,47 @@ EngineConfig cycle_defaults() {
     return c;
 }
 
+EngineConfig ga_defaults() {
+    EngineConfig c;
+    c.mode = "ga";
+    c.mirror = false;
+    return c;
+}
+
+namespace {
+
+EngineResult run_ga_mode(const System& seed, const EngineConfig& cfg, unsigned long long seed_value) {
+    System start = seed;
+    if (cfg.mirror) {
+        mirror_symmetry(start);
+        relax(start, RelaxOptions{});
+        const CompressResult c = anneal(start, cfg.prepare_ds, cfg.prepare_max_relax);
+        if (!c.found) start = seed;
+    }
+    std::function<void(double, GAConfig&)> hook;
+    if (cfg.update) {
+        hook = [&cfg](double t, GAConfig& g) {
+            EngineConfig c = cfg;
+            cfg.update(t, c);
+            g = c.ga;
+        };
+    }
+    GAOutcome go = run_ga(start, cfg.ga, seed_value, cfg.wall_seconds, cfg.max_kicks, hook);
+    EngineResult out;
+    out.found = std::isfinite(go.best_side);
+    out.best = go.best;
+    out.best_side = go.best_side;
+    out.telemetry = std::move(go.telemetry);
+    out.telemetry["run"] = {{"n", seed.particles.size()}, {"seed", seed_value}, {"mode", "ga"}};
+    out.telemetry["side"]["seed"] = seed.tight_side();
+    out.telemetry["side"]["start"] = out.telemetry["side"]["start_legal"];
+    return out;
+}
+
+}  // namespace
+
 EngineResult run_engine(const System& seed, const EngineConfig& cfg, unsigned long long seed_value) {
+    if (cfg.mode == "ga") return run_ga_mode(seed, cfg, seed_value);
     const auto t_start = Clock::now();
     const double cpu_start0 = cpu_now();
     const auto wall = [&] { return std::chrono::duration<double>(Clock::now() - t_start).count(); };
@@ -113,6 +166,26 @@ EngineResult run_engine(const System& seed, const EngineConfig& cfg, unsigned lo
     // Kept as the drivers have it: start.L, the box, not initial.side (audit B3).
     System best = start, current = start;
     double best_side = start.L, current_side = start.L;
+    long legal_calls = 0, legal_fail = 0;
+    double legal_cost = 0.0;
+    // Legal side of a certified candidate, or +inf if it cannot be legalized; `sys` becomes the legal packing.
+    const auto legal_side = [&](System& sys) {
+        const double before = sys.tight_side();
+        const LegalizeResult lr = legalize(sys);
+        ++legal_calls;
+        if (!lr.ok) {
+            ++legal_fail;
+            return std::numeric_limits<double>::infinity();
+        }
+        legal_cost += lr.side_after - before;
+        return lr.side_after;
+    };
+    if (cfg.accept_legal) {
+        best_side = current_side = legal_side(best);
+        current = best;
+        tel["side"]["start_legal"] = best_side;
+    }
+    Workspace ws;
     double best_reached = shrink ? best_side : std::numeric_limits<double>::infinity();
 
     Pool pool;
@@ -136,7 +209,11 @@ EngineResult run_engine(const System& seed, const EngineConfig& cfg, unsigned lo
 
     const double cpu_start = cpu_now();
     const auto more = [&] {
-        if (shrink && eps < cfg.eps_min) { stop = "converged"; return false; }
+        if (shrink && eps < cfg.eps_min) {
+            if (cfg.on_converge == 0) { stop = "converged"; return false; }
+            eps = cfg.eps;  // restart the target sequence from the best
+            ++restarts;
+        }
         if (cfg.max_kicks > 0 && kick_no >= cfg.max_kicks) return false;
         if (cfg.wall_seconds > 0.0 && wall() >= cfg.wall_seconds) return false;
         return cfg.max_kicks > 0 || cfg.wall_seconds > 0.0;
@@ -164,18 +241,36 @@ EngineResult run_engine(const System& seed, const EngineConfig& cfg, unsigned lo
             System trial = best;
             trial.rescale_box(target);
             row = kick(trial, rng, c.kick, lnm, lnm_stats, log, p_large);
-            const RelaxResult rr = relax(trial, RelaxOptions{});
+            bool feasible;
+            if (c.relax_method == 1) {
+                Packing pk = to_packing(trial);
+                const CappedStats cs = relax_capped(pk, capped_params(c), ws);
+                for (int i = 0; i < pk.n(); ++i) {
+                    const size_t q = 3 * static_cast<size_t>(i);
+                    trial.particles[static_cast<size_t>(i)].set_pose(pk.xyt[q], pk.xyt[q + 1], pk.xyt[q + 2]);
+                }
+                trial.recount();
+                relax_iters += cs.iters;
+                ++relax_stops[cs.reached ? "feasible" : "not reached"];
+                feasible = cs.reached;
+            } else {
+                const RelaxResult rr = relax(trial, RelaxOptions{});
+                relax_iters += rr.iterations;
+                ++relax_stops[stop_name(rr.stop)];
+                feasible = rr.feasible;
+            }
             ++relax_calls;
-            relax_iters += rr.iterations;
-            ++relax_stops[stop_name(rr.stop)];
-            if (rr.feasible) {
+            if (feasible) {
                 trial.fit_box();
                 if (trial.is_feasible(kCertifyTol) && trial.L < best_side) {
-                    accepted = improved = true;
-                    gain = best_side - trial.L;
-                    best = trial;
-                    best_side = trial.L;
-                    best_reached = std::min(best_reached, best_side);
+                    const double side = cfg.accept_legal ? legal_side(trial) : trial.L;
+                    if (side < best_side) {
+                        accepted = improved = true;
+                        gain = best_side - side;
+                        best = trial;
+                        best_side = side;
+                        best_reached = std::min(best_reached, best_side);
+                    }
                 }
             }
         } else {
@@ -185,23 +280,25 @@ EngineResult run_engine(const System& seed, const EngineConfig& cfg, unsigned lo
             const CompressResult res = anneal(trial, c.cycle_ds, c.cycle_max_relax);
             ++compress_calls;
             compress_relax += res.relaxations;
-            if (res.found) {
+            double res_side = res.side;
+            if (res.found && cfg.accept_legal) res_side = legal_side(trial);
+            if (res.found && res_side < std::numeric_limits<double>::infinity()) {
                 ++compress_found;
-                best_reached = std::min(best_reached, res.side);
-                const double T = c.side_T * res.side / std::sqrt(static_cast<double>(seed.particles.size()));
-                const double d = res.side - current_side;
+                best_reached = std::min(best_reached, res_side);
+                const double T = c.side_T * res_side / std::sqrt(static_cast<double>(seed.particles.size()));
+                const double d = res_side - current_side;
                 if (d <= 0.0 || (T > 0.0 && unit(rng) < std::exp(-d / T))) {
                     accepted = true;
                     current = trial;
-                    current_side = res.side;
+                    current_side = res_side;
                 }
-                if (res.side < best_side) {
+                if (res_side < best_side) {
                     improved = accepted = true;
-                    gain = best_side - res.side;
+                    gain = best_side - res_side;
                     best = trial;
-                    best_side = res.side;
+                    best_side = res_side;
                     current = trial;
-                    current_side = res.side;
+                    current_side = res_side;
                 }
             }
         }
@@ -296,6 +393,7 @@ EngineResult run_engine(const System& seed, const EngineConfig& cfg, unsigned lo
     }
     json pg = json::object();
     for (const auto& [m, g] : pool_gains) pg[std::to_string(m)] = g;
+    tel["legal"] = {{"calls", legal_calls}, {"failures", legal_fail}, {"mean_cost", legal_calls > legal_fail ? legal_cost / static_cast<double>(legal_calls - legal_fail) : 0.0}};
     tel["events"] = {{"escalations", escalations}, {"restarts", restarts}, {"jams", relax_calls - relax_stops["feasible"]},
                      {"eps_final", eps}, {"pool_gains", pg}};
     return out;

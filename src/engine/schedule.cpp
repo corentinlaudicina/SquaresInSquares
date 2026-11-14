@@ -1,5 +1,6 @@
 #include "engine/schedule.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -15,10 +16,11 @@ using json = nlohmann::json;
 // `curve` marks the ones read per kick, so a curve on them means something.
 struct Field {
     const char* path;
-    enum Kind { Number, Integer, Bool } kind;
+    enum Kind { Number, Integer, Bool, Choice } kind;
     bool curve;
     std::function<double(const EngineConfig&)> get;
     std::function<void(EngineConfig&, double)> set;
+    std::vector<std::string> choices = {};  // Choice: the value is the index of one of these strings
 };
 
 #define NUM(path, member, curve) \
@@ -27,6 +29,9 @@ struct Field {
 #define INT(path, member, curve) \
     Field{path, Field::Integer, curve, [](const EngineConfig& c) { return static_cast<double>(c.member); }, \
           [](EngineConfig& c, double v) { c.member = static_cast<decltype(c.member)>(std::llround(v)); }}
+#define CHOICE(path, member, ...) \
+    Field{path, Field::Choice, false, [](const EngineConfig& c) { return static_cast<double>(c.member); }, \
+          [](EngineConfig& c, double v) { c.member = static_cast<int>(v); }, {__VA_ARGS__}}
 #define BOOL(path, member) \
     Field{path, Field::Bool, false, [](const EngineConfig& c) { return c.member ? 1.0 : 0.0; }, \
           [](EngineConfig& c, double v) { c.member = v != 0.0; }}
@@ -70,10 +75,63 @@ const std::vector<Field>& fields() {
         NUM("shrink.eps_max", eps_max, true),
         NUM("shrink.on_success", eps_up, true),
         NUM("shrink.on_fail", eps_down, true),
+        CHOICE("shrink.on_converge", on_converge, "stop", "reset"),
         NUM("cycle.ds", cycle_ds, true),
         INT("cycle.max_relax", cycle_max_relax, true),
         NUM("cycle.side_T", side_T, true),
         INT("cycle.restart_after", restart_after, true),
+        BOOL("accept.legal", accept_legal),
+        CHOICE("relax.method", relax_method, "classic", "capped"),
+        CHOICE("relax.penalty", relax_penalty, "area2", "depth2"),
+        INT("relax.history", relax_history, true),
+        NUM("relax.tol", relax_tol, true),
+        NUM("relax.rough_cap", relax_rough_cap, true),
+        INT("relax.rough_iters", relax_rough_iters, true),
+        NUM("relax.fine_cap", relax_fine_cap, true),
+        INT("relax.fine_iters", relax_fine_iters, true),
+        INT("relax.fine_stages", relax_fine_stages, true),
+        INT("ga.population", ga.population, false),
+        INT("ga.offspring", ga.offspring, true),
+        NUM("ga.prefilter", ga.prefilter, true),
+        NUM("ga.fine_frac", ga.fine_frac, true),
+        INT("ga.threads", ga.threads, false),
+        CHOICE("ga.penalty", ga.penalty, "area2", "depth2"),
+        INT("ga.history", ga.history, true),
+        NUM("ga.rough_cap", ga.rough_cap, true),
+        INT("ga.rough_iters", ga.rough_iters, true),
+        NUM("ga.fine_cap", ga.fine_cap, true),
+        INT("ga.fine_iters", ga.fine_iters, true),
+        INT("ga.fine_stages", ga.fine_stages, true),
+        NUM("ga.tol", ga.tol, true),
+        NUM("ga.init_jiggle", ga.init_jiggle, false),
+        NUM("ratchet.shrink", ga.ratchet_shrink, true),
+        NUM("ga.moves.relocate", ga.moves.weight[0], true),
+        NUM("ga.moves.jiggle_small", ga.moves.weight[1], true),
+        NUM("ga.moves.jiggle_large", ga.moves.weight[2], true),
+        NUM("ga.moves.cluster", ga.moves.weight[3], true),
+        NUM("ga.moves.twist", ga.moves.weight[4], true),
+        NUM("ga.moves.translate", ga.moves.weight[5], true),
+        NUM("ga.moves.crossover", ga.moves.weight[6], true),
+        NUM("ga.move.snap_prob", ga.moves.snap_prob, true),
+        NUM("ga.move.jiggle_small", ga.moves.jiggle_small, true),
+        NUM("ga.move.jiggle_large", ga.moves.jiggle_large, true),
+        INT("ga.move.cluster_min", ga.moves.cluster_min, true),
+        INT("ga.move.cluster_max", ga.moves.cluster_max, true),
+        NUM("ga.move.cluster_sigma", ga.moves.cluster_sigma, true),
+        NUM("ga.move.twist_radius", ga.moves.twist_radius, true),
+        NUM("ga.move.twist_angle", ga.moves.twist_angle, true),
+        NUM("ga.move.translate_radius", ga.moves.translate_radius, true),
+        NUM("ga.move.translate_sigma", ga.moves.translate_sigma, true),
+        NUM("ga.move.crossover_radius", ga.moves.crossover_radius, true),
+        NUM("ga.move.crossover_symmetry", ga.moves.crossover_symmetry, true),
+        NUM("diversity.elite", ga.diversity.elite, true),
+        NUM("diversity.threshold", ga.diversity.threshold, true),
+        NUM("diversity.hist_threshold", ga.diversity.hist_threshold, true),
+        Field{"diversity.metric", Field::Choice, false,
+              [](const EngineConfig& c) { return static_cast<double>(static_cast<int>(c.ga.diversity.metric)); },
+              [](EngineConfig& c, double v) { c.ga.diversity.metric = static_cast<Metric>(static_cast<int>(v)); },
+              {"auto", "assign", "hist"}},
+        INT("diversity.assign_max_n", ga.diversity.assign_max_n, true),
         BOOL("propagate.enabled", propagate),
         INT("propagate.every", propagate_every, true),
     };
@@ -83,6 +141,7 @@ const std::vector<Field>& fields() {
 #undef NUM
 #undef INT
 #undef BOOL
+#undef CHOICE
 
 struct Curve {
     std::vector<std::pair<double, double>> pts;
@@ -134,8 +193,16 @@ std::string fnv1a(const std::string& s) {
 }  // namespace
 
 std::vector<std::string> field_names() {
-    std::vector<std::string> out = {"schema", "name", "description", "mode (shrink | cycle)"};
-    for (const Field& f : fields()) out.push_back(std::string(f.path) + (f.curve ? " (curve)" : ""));
+    std::vector<std::string> out = {"schema", "name", "description", "mode (shrink | cycle | ga)"};
+    for (const Field& f : fields()) {
+        std::string line = std::string(f.path) + (f.curve ? " (curve)" : "");
+        if (!f.choices.empty()) {
+            line += " (";
+            for (size_t i = 0; i < f.choices.size(); ++i) line += (i ? " | " : "") + f.choices[i];
+            line += ")";
+        }
+        out.push_back(line);
+    }
     return out;
 }
 
@@ -147,10 +214,10 @@ std::optional<ParsedSchedule> parse_schedule(const json& doc, std::string* error
     if (!doc.is_object()) return fail("a schedule is a JSON object");
     if (doc.contains("schema") && doc["schema"] != "sqpack.schedule/1") return fail("schema is not sqpack.schedule/1");
     const std::string mode = doc.value("mode", std::string("shrink"));
-    if (mode != "shrink" && mode != "cycle") return fail("mode must be shrink or cycle");
+    if (mode != "shrink" && mode != "cycle" && mode != "ga") return fail("mode must be shrink, cycle or ga");
 
     ParsedSchedule ps;
-    ps.config = mode == "cycle" ? cycle_defaults() : shrink_defaults();
+    ps.config = mode == "cycle" ? cycle_defaults() : mode == "ga" ? ga_defaults() : shrink_defaults();
     ps.name = doc.value("name", std::string("unnamed"));
 
     std::vector<std::pair<std::string, json>> leaves;
@@ -165,7 +232,12 @@ std::optional<ParsedSchedule> parse_schedule(const json& doc, std::string* error
             if (path == g.path) f = &g;
         }
         if (!f) return fail("unknown schedule key " + path);
-        if (f->kind == Field::Bool) {
+        if (f->kind == Field::Choice) {
+            const auto it = v.is_string() ? std::find(f->choices.begin(), f->choices.end(), v.get<std::string>())
+                                          : f->choices.end();
+            if (it == f->choices.end()) return fail(path + " must be one of the listed strings");
+            f->set(ps.config, static_cast<double>(it - f->choices.begin()));
+        } else if (f->kind == Field::Bool) {
             if (!v.is_boolean()) return fail(path + " must be true or false");
             f->set(ps.config, v.get<bool>() ? 1.0 : 0.0);
         } else if (v.is_number()) {
@@ -196,7 +268,8 @@ std::optional<ParsedSchedule> parse_schedule(const json& doc, std::string* error
         std::string p = f.path;
         for (size_t dot; (dot = p.find('.')) != std::string::npos; p = p.substr(dot + 1)) node = &(*node)[p.substr(0, dot)];
         json value;
-        if (f.kind == Field::Bool) value = f.get(ps.config) != 0.0;
+        if (f.kind == Field::Choice) value = f.choices[static_cast<size_t>(f.get(ps.config))];
+        else if (f.kind == Field::Bool) value = f.get(ps.config) != 0.0;
         else if (f.kind == Field::Integer) value = std::llround(f.get(ps.config));
         else value = f.get(ps.config);
         for (const auto& [g, c] : *curves) {

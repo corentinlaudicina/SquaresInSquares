@@ -43,6 +43,13 @@ void test_values_and_types() {
     assert(err({{"shrink", {{"on_fail", 1.5}}}}).find("on_fail") != std::string::npos);
 }
 
+void test_choices() {
+    const EngineConfig c = ok({{"relax", {{"method", "capped"}, {"penalty", "area2"}}}, {"accept", {{"legal", true}}}}).config;
+    assert(c.relax_method == 1 && c.relax_penalty == 0 && c.accept_legal);
+    assert(err({{"relax", {{"method", "fast"}}}}).find("listed strings") != std::string::npos);
+    assert(ok({{"relax", {{"method", "capped"}}}}).resolved["relax"]["method"] == "capped");
+}
+
 void test_curves() {
     ParsedSchedule ps = ok({{"kick", {{"shake", {{"T", {{0.0, 0.1}, {0.5, 0.01}, {1.0, 0.01}}}}}}}});
     assert(ps.config.kick.shake_T == 0.1 && ps.config.update);
@@ -67,6 +74,7 @@ void test_resolved_round_trip() {
 int main() {
     test_empty_is_defaults();
     test_values_and_types();
+    test_choices();
     test_curves();
     test_resolved_round_trip();
     std::printf("schedule: all tests passed\n");

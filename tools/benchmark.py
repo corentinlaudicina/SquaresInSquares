@@ -140,7 +140,21 @@ def main(argv=None):
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) // 2))
     ap.add_argument("--targets", help="JSON {N: side}")
     ap.add_argument("--name", default=time.strftime("%Y%m%d_%H%M%S"))
+    ap.add_argument("--combine", nargs="+", metavar="NAME",
+                    help="no runs: merge runs/bench/<NAME>/results.jsonl into one report (same N, seeds, budget)")
     a = ap.parse_args(argv)
+    if a.combine:
+        keep = {Path(x).stem for x in a.schedules}
+        results = [r for nm in a.combine for l in (ROOT / "runs" / "bench" / nm / "results.jsonl").open()
+                   if (r := json.loads(l))["schedule"] in keep]
+        ns = sorted({r["N"] for r in results})
+        seeds = sorted({r["seed"] for r in results})
+        text = report(results, a.schedules, ns, seeds, a.time)
+        out = ROOT / "runs" / "bench" / a.name
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "report.md").write_text(text)
+        print(text)
+        return 0
     engine = ROOT / "build" / "engine"
     if not engine.exists():
         sys.exit("benchmark: make engine first")
