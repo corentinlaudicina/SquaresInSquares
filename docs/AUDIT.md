@@ -369,3 +369,16 @@ D4 canonicalisation exist, so Phase 3 items 3 and 7 are partly built. Phase 3 it
 - **Q4 JSON:** vendor `nlohmann/json` (single header, MIT).
 - **Q8 git:** visualisation output, venvs, build output, logs, scratch and the legacy `data/best/` are
   gitignored. `data/init_external/` (22 MB, never changes, cannot be regenerated) stays tracked.
+
+## 14. Findings during Phase 2
+
+- **Legalization cost is set by the certify tolerance (refines B4).** `compress()`/`relax()` certify at
+  overlap *area* 1e-10, so their packings overlap by up to ~1e-5 in *depth*. Removing that costs real
+  side: measured +8.6e-6 at n=29 and +1.1e-4 at n=1000 (legalizer: inflated squares by 1e-11, cumulative
+  growth, then bisection; on synthetic cases it gets within 1e-9 of the optimum). Since `best/` only takes
+  legal packings, the search should certify much tighter, or legalize inside the loop. Phase 3 question.
+- **B3 is worse than first written:** after the start compress, the box `L` can be *smaller* than the
+  squares' extent (n=29: L = 6.000511860, tight side = 6.000512184), so the old drivers' reported side was
+  optimistic. The engine keeps that value for bit-reproduction but legalizes from the true extent.
+- Strict validity in float rejects 313/1000 seeds by <= 1.8e-15 (corners exactly on the wall, rounded
+  outward). The legalizer's refit (exact shifts on an ulp grid plus a 4-ulp margin) fixes these at a cost of ~1e-14.

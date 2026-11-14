@@ -4,7 +4,7 @@
 
 CXX      := clang++
 WARN     := -Wall -Wextra -Wpedantic
-COMMON   := -std=c++20 $(WARN) -Isrc -MMD -MP
+COMMON   := -std=c++20 $(WARN) -Isrc -isystem third_party -MMD -MP
 CXXFLAGS := $(COMMON) -O2 -pthread
 DBGFLAGS := $(COMMON) -O0 -g -pthread -fsanitize=address,undefined
 
@@ -32,21 +32,28 @@ SYMMETRY_SRC := $(CORE) $(RELAX) $(LNM) tests/test_symmetry.cpp
 MAIN_SRC := $(CORE) $(RELAX) $(LNM) src/main.cpp
 SHRINK_SRC   := $(CORE) $(RELAX) $(LNM) src/main_shrink.cpp
 COMPRESS_SRC := $(CORE) $(RELAX) $(LNM) src/main_compress.cpp
+# The engine: the protocols as a library, legalization, sqpack/1 I/O. See docs/AUDIT.md.
+ENGINE_LIB := src/legalize.cpp src/engine/protocol.cpp src/engine/solution_io.cpp
+ENGINE_SRC := $(CORE) $(RELAX) $(LNM) $(ENGINE_LIB) src/main_engine.cpp
+LEGALIZE_SRC := $(CORE) $(RELAX) src/legalize.cpp tests/test_legalize.cpp
+# shortcut: stamped when main_engine.o is compiled, so it can lag a commit; `make clean engine` before a release run.
+GIT_REV := $(shell git describe --always --dirty 2>/dev/null || echo unknown)
 
 o  = $(1:%.cpp=$(OBJ)/%.o)
 do = $(1:%.cpp=$(DOBJ)/%.o)
 
-ALL_OBJ := $(call o,$(POLY_SRC) $(IO_SRC) $(SYS_SRC) $(RELAX_SRC) $(LNM_SRC) $(MERGE_SRC) $(SYMMETRY_SRC) $(MAIN_SRC) $(SHRINK_SRC) $(COMPRESS_SRC))
+ALL_OBJ := $(call o,$(POLY_SRC) $(IO_SRC) $(SYS_SRC) $(RELAX_SRC) $(LNM_SRC) $(MERGE_SRC) $(SYMMETRY_SRC) $(MAIN_SRC) $(SHRINK_SRC) $(COMPRESS_SRC) $(ENGINE_SRC) $(LEGALIZE_SRC))
 ALL_DOBJ := $(call do,$(POLY_SRC) $(IO_SRC) $(SYS_SRC) $(RELAX_SRC) $(LNM_SRC) $(MERGE_SRC) $(SYMMETRY_SRC))
 
-all: test squares shrink compress
+all: test squares shrink compress engine
 
 test:      $(BUILD)/test_polygon $(BUILD)/test_io $(BUILD)/test_system \
            $(BUILD)/test_relax $(BUILD)/test_lnm \
-           $(BUILD)/test_merge $(BUILD)/test_symmetry
+           $(BUILD)/test_merge $(BUILD)/test_symmetry $(BUILD)/test_legalize
 squares:   $(BUILD)/squares
 shrink:    $(BUILD)/squares_shrink
 compress:  $(BUILD)/squares_compress
+engine:    $(BUILD)/engine
 debug:     $(BUILD)/test_polygon_debug $(BUILD)/test_io_debug \
            $(BUILD)/test_system_debug $(BUILD)/test_relax_debug \
            $(BUILD)/test_lnm_debug \
@@ -61,6 +68,7 @@ check: test
 	./$(BUILD)/test_lnm
 	./$(BUILD)/test_merge
 	./$(BUILD)/test_symmetry
+	./$(BUILD)/test_legalize
 	python3 -m unittest tools/test_validate.py
 
 $(OBJ)/%.o: %.cpp
@@ -101,6 +109,14 @@ $(BUILD)/squares_shrink: $(call o,$(SHRINK_SRC))
 $(BUILD)/squares_compress: $(call o,$(COMPRESS_SRC))
 	$(CXX) $(CXXFLAGS) $^ -o $@
 
+$(BUILD)/engine: $(call o,$(ENGINE_SRC))
+	$(CXX) $(CXXFLAGS) $^ -o $@
+
+$(BUILD)/test_legalize: $(call o,$(LEGALIZE_SRC))
+	$(CXX) $(CXXFLAGS) $^ -o $@
+
+$(OBJ)/src/main_engine.o: CXXFLAGS += -DENGINE_VERSION='"$(GIT_REV)"'
+
 $(BUILD)/test_polygon_debug: $(call do,$(POLY_SRC))
 	$(CXX) $(DBGFLAGS) $^ -o $@
 
@@ -127,4 +143,4 @@ clean:
 
 -include $(ALL_OBJ:.o=.d) $(ALL_DOBJ:.o=.d)
 
-.PHONY: all test squares shrink compress debug check clean
+.PHONY: all test squares shrink compress engine debug check clean
