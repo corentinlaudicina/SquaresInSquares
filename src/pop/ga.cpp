@@ -7,6 +7,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <limits>
 #include <numeric>
 
 namespace pack {
@@ -69,6 +70,50 @@ std::vector<int> by_cost(const std::vector<Individual>& v) {
     return o;
 }
 
+struct Island {
+    std::vector<Individual> pop;
+    double h = 0.0;
+    long ratchets = 0, resets = 0, since_progress = 0, longest_stall = 0;
+    double mark = std::numeric_limits<double>::infinity();  // best residual at the last progress
+};
+
+void sort_pop(std::vector<Individual>& pop) {
+    std::stable_sort(pop.begin(), pop.end(), [](const Individual& a, const Individual& b) { return a.info.cost < b.info.cost; });
+}
+
+// Population in box h: `from` (rescaled) plus jiggled copies of it, relaxed rough then fine.
+void seed_island(Island& is, const System& from, double h, const GAConfig& c, std::mt19937_64& rng, RelaxBackend& be) {
+    Packing base = to_packing(from);
+    rescale(base, h);
+    is.h = h;
+    is.pop.assign(static_cast<size_t>(std::max(1, c.population)), Individual{});
+    for (size_t i = 0; i < is.pop.size(); ++i) {
+        is.pop[i].p = base;
+        if (i > 0)
+            for (double& v : is.pop[i].p.xyt) v += c.init_jiggle * normal(rng);
+    }
+    std::vector<int> all(is.pop.size());
+    std::iota(all.begin(), all.end(), 0);
+    relax_all(is.pop, all, rough_params(c), be);
+    relax_all(is.pop, all, fine_params(c), be);
+    sort_pop(is.pop);
+    is.since_progress = 0;
+    is.mark = is.pop.front().info.cost;
+}
+
+std::vector<int> neighbours(int i, int k, int topology) {
+    std::vector<int> nb;
+    if (k < 2) return nb;
+    if (topology == 1) {
+        for (int j = 0; j < k; ++j)
+            if (j != i) nb.push_back(j);
+    } else {
+        nb.push_back((i + k - 1) % k);
+        if (k > 2) nb.push_back((i + 1) % k);
+    }
+    return nb;
+}
+
 }  // namespace
 
 GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long seed, double wall_seconds,
@@ -88,27 +133,13 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
     tel["side"]["start_legal"] = out.best_side;
     json side_trace = json::array({json::array({wall(), out.best_side})});
 
-    // Initial population: the start in the first ratchet box, and jiggled copies of it.
-    double h = out.best.L * (1.0 - c.ratchet_shrink);
-    Packing base = to_packing(out.best);
-    rescale(base, h);
-    std::vector<Individual> pop(static_cast<size_t>(std::max(1, c.population)));
-    for (size_t i = 0; i < pop.size(); ++i) {
-        pop[i].p = base;
-        if (i > 0)
-            for (double& v : pop[i].p.xyt) v += c.init_jiggle * normal(rng);
-    }
-    {
-        std::vector<int> all(pop.size());
-        std::iota(all.begin(), all.end(), 0);
-        relax_all(pop, all, rough_params(c), be);
-        relax_all(pop, all, fine_params(c), be);
-    }
-    std::stable_sort(pop.begin(), pop.end(), [](const Individual& a, const Individual& b) { return a.info.cost < b.info.cost; });
+    const int K = std::max(1, c.islands);
+    std::vector<Island> isl(static_cast<size_t>(K));
+    for (Island& is : isl) seed_island(is, out.best, out.best.L * (1.0 - c.ratchet_shrink), c, rng, be);
 
     std::array<long, kGaMoves> produced{}, relaxed{}, survived{};
     std::array<double, 6> tsplit{};  // offspring, prefilter, rough, fine, select, ratchet
-    long generation = 0, ratchets = 0, legal_improvements = 0, distance_evals = 0, since_ratchet = 0, longest_stall = 0;
+    long generation = 0, legal_improvements = 0, distance_evals = 0, migrations = 0;
     json gens = json::array();
     std::string stop = "budget";
 
@@ -130,109 +161,139 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
             if (wall_seconds > 0.0) frac = std::max(frac, wall() / wall_seconds);
             update(std::min(1.0, frac), c);
         }
-        auto t = Clock::now();
+        // Champions at the start of the generation: what the islands mate with.
+        std::vector<Packing> champ;
+        if (K > 1)
+            for (const Island& is : isl) champ.push_back(is.pop.front().p);
 
-        // 1. offspring
-        const int lambda = std::max(1, c.offspring);
-        std::vector<Individual> kids(static_cast<size_t>(lambda));
-        for (Individual& k : kids) {
-            const int a = uniform_int(rng, 0, static_cast<int>(pop.size()) - 1);
-            GaMove m = draw_move(c.moves, rng);
-            const Packing* mate = nullptr;
-            if (m == GaMove::Crossover) {
-                if (pop.size() < 2) {
-                    m = GaMove::JiggleSmall;
-                } else {
-                    int b = uniform_int(rng, 0, static_cast<int>(pop.size()) - 2);
-                    if (b >= a) ++b;
-                    mate = &pop[static_cast<size_t>(b)].p;
+        for (int ii = 0; ii < K; ++ii) {
+            Island& is = isl[static_cast<size_t>(ii)];
+            std::vector<Individual>& pop = is.pop;
+            const std::vector<int> nb = neighbours(ii, K, c.topology);
+            auto t = Clock::now();
+
+            // 1. offspring
+            const int lambda = std::max(1, c.offspring);
+            std::vector<Individual> kids(static_cast<size_t>(lambda));
+            Packing mate_buf;
+            for (Individual& k : kids) {
+                const int a = uniform_int(rng, 0, static_cast<int>(pop.size()) - 1);
+                GaMove m = draw_move(c.moves, rng);
+                const Packing* mate = nullptr;
+                if (m == GaMove::Crossover) {
+                    if (!nb.empty()) {  // islands: a connected island's champion, in this island's box
+                        mate_buf = champ[static_cast<size_t>(nb[static_cast<size_t>(uniform_int(rng, 0, static_cast<int>(nb.size()) - 1))])];
+                        rescale(mate_buf, is.h);
+                        mate = &mate_buf;
+                        ++migrations;
+                    } else if (pop.size() < 2) {
+                        m = GaMove::JiggleSmall;
+                    } else {
+                        int b = uniform_int(rng, 0, static_cast<int>(pop.size()) - 2);
+                        if (b >= a) ++b;
+                        mate = &pop[static_cast<size_t>(b)].p;
+                    }
+                }
+                k.p = pop[static_cast<size_t>(a)].p;
+                k.move = static_cast<int>(m);
+                apply_move(k.p, m, c.moves, rng, mate);
+                ++produced[static_cast<size_t>(m)];
+            }
+            lap(t, 0);
+
+            // 2. pre-filter on the raw penalty
+            {
+                std::vector<Packing> batch;
+                batch.reserve(kids.size());
+                for (const Individual& k : kids) batch.push_back(k.p);
+                std::vector<CostInfo> raw;
+                be.cost_batch(batch, rough_params(c).penalty, raw);
+                for (size_t i = 0; i < kids.size(); ++i) kids[i].info = raw[i];
+            }
+            std::vector<int> order = by_cost(kids);
+            order.resize(static_cast<size_t>(std::clamp<long>(std::lround(c.prefilter * lambda), 1, lambda)));
+            lap(t, 1);
+
+            // 3. relax: rough for the pre-filtered, fine for the best of those
+            relax_all(kids, order, rough_params(c), be);
+            for (const int i : order) ++relaxed[static_cast<size_t>(kids[static_cast<size_t>(i)].move)];
+            lap(t, 2);
+            std::stable_sort(order.begin(), order.end(), [&](int x, int y) {
+                return kids[static_cast<size_t>(x)].info.cost < kids[static_cast<size_t>(y)].info.cost;
+            });
+            order.resize(static_cast<size_t>(std::clamp<long>(std::lround(c.fine_frac * static_cast<double>(order.size())), 1,
+                                                              static_cast<long>(order.size()))));
+            relax_all(kids, order, fine_params(c), be);
+            lap(t, 3);
+
+            // 4. selection from parents + fine-relaxed offspring
+            std::vector<Individual> cand = std::move(pop);
+            for (Individual& p : cand) p.move = -1;
+            for (const int i : order) cand.push_back(std::move(kids[static_cast<size_t>(i)]));
+            const std::vector<int> corder = by_cost(cand);
+            std::vector<Packing> cp;
+            cp.reserve(cand.size());
+            for (const Individual& x : cand) cp.push_back(x.p);
+            ParallelFor parfor;
+            if (be.threads() > 1) parfor = [&be](int n, const std::function<void(int, int)>& f) { be.parallel_for(n, f); };
+            const std::vector<int> chosen = select_diverse(cp, corder, c.population, c.diversity, &distance_evals, parfor);
+            pop.clear();
+            std::array<long, kGaMoves> surv_gen{};
+            for (const int i : chosen) {
+                if (cand[static_cast<size_t>(i)].move >= 0) ++surv_gen[static_cast<size_t>(cand[static_cast<size_t>(i)].move)];
+                pop.push_back(std::move(cand[static_cast<size_t>(i)]));
+            }
+            sort_pop(pop);
+            for (int m = 0; m < kGaMoves; ++m) survived[static_cast<size_t>(m)] += surv_gen[static_cast<size_t>(m)];
+            lap(t, 4);
+
+            // 5. ratchet, or count the stall; a long stall resets the island
+            bool ratcheted = false, reset = false;
+            if (feasible(pop.front().info, c.tol)) {
+                System legal = to_system(pop.front().p);
+                const LegalizeResult lr = legalize(legal);
+                if (lr.ok && legal.L < out.best_side) {
+                    out.best = legal;
+                    out.best_side = legal.L;
+                    ++legal_improvements;
+                    side_trace.push_back({wall(), out.best_side});
+                }
+                is.h = std::min(is.h, out.best_side) * (1.0 - c.ratchet_shrink);
+                for (Individual& x : pop) rescale(x.p, is.h);
+                std::vector<int> all(pop.size());
+                std::iota(all.begin(), all.end(), 0);
+                relax_all(pop, all, fine_params(c), be);
+                sort_pop(pop);
+                ++is.ratchets;
+                ratcheted = true;
+                is.since_progress = 0;
+                is.mark = pop.front().info.cost;
+            } else if (pop.front().info.cost < is.mark * (1.0 - c.island_threshold)) {
+                is.mark = pop.front().info.cost;
+                is.since_progress = 0;
+            } else {
+                is.longest_stall = std::max(is.longest_stall, ++is.since_progress);
+                if (c.island_patience > 0 && is.since_progress >= c.island_patience) {
+                    seed_island(is, out.best, out.best_side * (1.0 - c.ratchet_shrink), c, rng, be);
+                    ++is.resets;
+                    reset = true;
                 }
             }
-            k.p = pop[static_cast<size_t>(a)].p;
-            k.move = static_cast<int>(m);
-            apply_move(k.p, m, c.moves, rng, mate);
-            ++produced[static_cast<size_t>(m)];
-        }
-        lap(t, 0);
+            lap(t, 5);
 
-        // 2. pre-filter on the raw penalty
-        {
-            std::vector<Packing> batch;
-            batch.reserve(kids.size());
-            for (const Individual& k : kids) batch.push_back(k.p);
-            std::vector<CostInfo> raw;
-            be.cost_batch(batch, rough_params(c).penalty, raw);
-            for (size_t i = 0; i < kids.size(); ++i) kids[i].info = raw[i];
-        }
-        std::vector<int> order = by_cost(kids);
-        order.resize(static_cast<size_t>(std::clamp<long>(std::lround(c.prefilter * lambda), 1, lambda)));
-        lap(t, 1);
-
-        // 3. relax: rough for the pre-filtered, fine for the best of those
-        relax_all(kids, order, rough_params(c), be);
-        for (const int i : order) ++relaxed[static_cast<size_t>(kids[static_cast<size_t>(i)].move)];
-        lap(t, 2);
-        std::stable_sort(order.begin(), order.end(), [&](int a, int b) {
-            return kids[static_cast<size_t>(a)].info.cost < kids[static_cast<size_t>(b)].info.cost;
-        });
-        order.resize(static_cast<size_t>(std::clamp<long>(std::lround(c.fine_frac * static_cast<double>(order.size())), 1,
-                                                          static_cast<long>(order.size()))));
-        relax_all(kids, order, fine_params(c), be);
-        lap(t, 3);
-
-        // 4. selection from parents + fine-relaxed offspring
-        std::vector<Individual> cand = std::move(pop);
-        for (Individual& p : cand) p.move = -1;
-        for (const int i : order) cand.push_back(std::move(kids[static_cast<size_t>(i)]));
-        const std::vector<int> corder = by_cost(cand);
-        std::vector<Packing> cp;
-        cp.reserve(cand.size());
-        for (const Individual& x : cand) cp.push_back(x.p);
-        ParallelFor parfor;
-        if (be.threads() > 1) parfor = [&be](int n, const std::function<void(int, int)>& f) { be.parallel_for(n, f); };
-        const std::vector<int> chosen = select_diverse(cp, corder, c.population, c.diversity, &distance_evals, parfor);
-        pop.clear();
-        std::array<long, kGaMoves> surv_gen{};
-        for (const int i : chosen) {
-            if (cand[static_cast<size_t>(i)].move >= 0) ++surv_gen[static_cast<size_t>(cand[static_cast<size_t>(i)].move)];
-            pop.push_back(std::move(cand[static_cast<size_t>(i)]));
-        }
-        std::stable_sort(pop.begin(), pop.end(), [](const Individual& a, const Individual& b) { return a.info.cost < b.info.cost; });
-        for (int m = 0; m < kGaMoves; ++m) survived[static_cast<size_t>(m)] += surv_gen[static_cast<size_t>(m)];
-        lap(t, 4);
-
-        // 5. ratchet
-        bool ratcheted = false;
-        if (feasible(pop.front().info, c.tol)) {
-            System legal = to_system(pop.front().p);
-            const LegalizeResult lr = legalize(legal);
-            if (lr.ok && legal.L < out.best_side) {
-                out.best = legal;
-                out.best_side = legal.L;
-                ++legal_improvements;
-                side_trace.push_back({wall(), out.best_side});
+            if (gens.size() < 600 && (generation < 300 || generation % 10 == 0)) {
+                json sg = json::object();
+                for (int m = 0; m < kGaMoves; ++m)
+                    if (surv_gen[static_cast<size_t>(m)]) sg[ga_move_name(static_cast<GaMove>(m))] = surv_gen[static_cast<size_t>(m)];
+                json e = {{"g", generation}, {"t", std::round(wall() * 100) / 100}, {"h", is.h},
+                          {"best_cost", pop.front().info.cost}, {"best_depth", pop.front().info.max_depth},
+                          {"ratchet", ratcheted}, {"survivors", sg}};
+                if (K > 1) {
+                    e["island"] = ii;
+                    e["reset"] = reset;
+                }
+                gens.push_back(e);
             }
-            h = std::min(h, out.best_side) * (1.0 - c.ratchet_shrink);
-            for (Individual& x : pop) rescale(x.p, h);
-            std::vector<int> all(pop.size());
-            std::iota(all.begin(), all.end(), 0);
-            relax_all(pop, all, fine_params(c), be);
-            std::stable_sort(pop.begin(), pop.end(), [](const Individual& a, const Individual& b) { return a.info.cost < b.info.cost; });
-            ++ratchets;
-            ratcheted = true;
-            since_ratchet = 0;
-        } else {
-            longest_stall = std::max(longest_stall, ++since_ratchet);
-        }
-        lap(t, 5);
-
-        if (generation < 300 || generation % 10 == 0) {
-            json sg = json::object();
-            for (int m = 0; m < kGaMoves; ++m)
-                if (surv_gen[static_cast<size_t>(m)]) sg[ga_move_name(static_cast<GaMove>(m))] = surv_gen[static_cast<size_t>(m)];
-            gens.push_back({{"g", generation}, {"t", std::round(wall() * 100) / 100}, {"h", h},
-                            {"best_cost", pop.front().info.cost}, {"best_depth", pop.front().info.max_depth},
-                            {"ratchet", ratcheted}, {"survivors", sg}});
         }
     }
 
@@ -243,12 +304,29 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
             {"produced", produced[k]}, {"relaxed", relaxed[k]}, {"survived", survived[k]},
             {"survival_rate", produced[k] ? static_cast<double>(survived[k]) / static_cast<double>(produced[k]) : 0.0}};
     }
+    long ratchets = 0, resets = 0, longest_stall = 0;
+    double h_final = isl.front().h;
+    json islands = json::array();
+    for (const Island& is : isl) {
+        ratchets += is.ratchets;
+        resets += is.resets;
+        longest_stall = std::max(longest_stall, is.longest_stall);
+        h_final = std::min(h_final, is.h);
+        islands.push_back({{"h", is.h}, {"ratchets", is.ratchets}, {"resets", is.resets},
+                           {"best_cost", is.pop.front().info.cost}, {"longest_stall", is.longest_stall}});
+    }
     tel["ga"] = {{"generations", generation}, {"ratchets", ratchets}, {"legal_improvements", legal_improvements},
-                 {"h_final", h}, {"longest_stall", longest_stall}, {"threads", be.threads()},
+                 {"h_final", h_final}, {"longest_stall", longest_stall}, {"threads", be.threads()},
                  {"distance_evals", distance_evals}, {"moves", moves},
                  {"seconds", {{"offspring", tsplit[0]}, {"prefilter", tsplit[1]}, {"rough", tsplit[2]},
                               {"fine", tsplit[3]}, {"select", tsplit[4]}, {"ratchet", tsplit[5]}}},
                  {"per_generation", gens}};
+    if (K > 1) {
+        tel["ga"]["islands"] = islands;
+        tel["ga"]["resets"] = resets;
+        tel["ga"]["migrations"] = migrations;
+        tel["ga"]["topology"] = c.topology == 1 ? "full" : "ring";
+    }
     tel["side"]["trace"] = side_trace;
     tel["side"]["best"] = out.best_side;
     tel["budget"] = {{"wall_s", wall()}, {"kicks", generation}, {"stop", stop}};

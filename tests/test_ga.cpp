@@ -111,6 +111,33 @@ void test_small_ga_is_legal_and_thread_independent() {
                 a.best_side, a.telemetry["side"]["start_legal"].get<double>(), a.telemetry["ga"]["ratchets"].get<int>());
 }
 
+void test_islands() {
+    auto seed = load_record("data/init_external/n0011.cfg");
+    assert(seed);
+    GAConfig cfg;
+    cfg.population = 8;
+    cfg.offspring = 24;
+    cfg.islands = 3;
+    cfg.island_patience = 2;  // short, so resets happen in a short run
+    cfg.moves.weight = {0.1, 0.2, 0.1, 0.1, 0.1, 0.1, 0.3};
+    cfg.threads = 1;
+    const GAOutcome a = run_ga(*seed, cfg, 9, 0.0, 6);
+    cfg.threads = 4;
+    const GAOutcome b = run_ga(*seed, cfg, 9, 0.0, 6);
+    assert(a.best_side == b.best_side);
+    assert(a.telemetry["ga"]["moves"] == b.telemetry["ga"]["moves"]);
+    assert(a.telemetry["ga"]["islands"] == b.telemetry["ga"]["islands"]);
+    assert(a.telemetry["ga"]["islands"].size() == 3);
+    assert(a.telemetry["ga"]["migrations"].get<long>() > 0);
+    assert(a.telemetry["ga"]["resets"].get<long>() > 0);
+    assert(strict_report(a.best).ok());
+    cfg.topology = 1;  // full: also runs and stays legal
+    const GAOutcome f = run_ga(*seed, cfg, 9, 0.0, 3);
+    assert(strict_report(f.best).ok() && f.telemetry["ga"]["topology"] == "full");
+    std::printf("  islands: 3 on a ring, %ld migrations, %ld resets, same on 1 and 4 threads\n",
+                a.telemetry["ga"]["migrations"].get<long>(), a.telemetry["ga"]["resets"].get<long>());
+}
+
 }  // namespace
 
 int main() {
@@ -119,5 +146,6 @@ int main() {
     test_distances_are_invariant();
     test_selection_spreads();
     test_small_ga_is_legal_and_thread_independent();
+    test_islands();
     std::printf("ga: all tests passed\n");
 }

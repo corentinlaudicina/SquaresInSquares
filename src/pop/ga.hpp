@@ -10,7 +10,7 @@
 //   2. pre-filter: keep the best `prefilter` share by raw penalty, before any relaxation;
 //   3. relax rough (big step cap), keep the best `fine_frac` share, relax those fine (small caps);
 //   4. select `population` survivors from parents + offspring (diversity.hpp: elite + spread);
-//   5. ratchet: if the best survivor's depth and wall protrusion are within `tol`, legalize a copy
+//   5. ratchet (per island): if the best survivor's depth and wall protrusion are within `tol`, legalize a copy
 //      (legalize.hpp; strict, CPU, double) and keep it if its side beats the best legal side; then
 //      shrink h by `ratchet_shrink` for the whole population, rescale everyone and relax them fine.
 // Per-move survivor rates are counted every generation. All randomness is drawn on the calling
@@ -46,6 +46,16 @@ struct GAConfig {
 
     double ratchet_shrink = 2e-4;  // relative shrink of h at each ratchet
     double init_jiggle = 0.02;     // sigma of the noise that makes the initial population from the start
+
+    // Islands (Phase 3 item 6). Each island is a population with its own ratchet box; the legal best
+    // is global. With islands > 1 a crossover mate is the champion of a connected island (ring: the
+    // two neighbours; full: any other island). An island whose best residual has not dropped by
+    // `island_threshold` (relative) and that has not ratcheted for `island_patience` generations is
+    // reset from jiggled copies of the global legal best, in its box. island_patience 0 = never.
+    int islands = 1;
+    int topology = 0;              // 0 = ring, 1 = full
+    long island_patience = 0;
+    double island_threshold = 1e-3;
 
     MoveParams moves;
     DiversityParams diversity;
