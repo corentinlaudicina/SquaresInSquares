@@ -61,6 +61,7 @@ check: test
 	./$(BUILD)/test_lnm
 	./$(BUILD)/test_merge
 	./$(BUILD)/test_symmetry
+	python3 -m unittest tools/test_validate.py
 
 $(OBJ)/%.o: %.cpp
 	@mkdir -p $(dir $@)
