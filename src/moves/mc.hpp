@@ -41,9 +41,14 @@ void tune_step(double& step, const Stats& trial, double lo, double hi);
 bool try_box(System& sys, const StepSizes& steps, double pressure, double temperature,
              std::mt19937_64& rng);
 
+// Relative weights of the four single-particle moves in a sweep; the defaults are the original mix.
+struct SweepMix {
+    double translate = 0.45, rotate = 0.45, flip = 0.06, shove = 0.04;
+};
+
 // `log`, if given, gets one row entry per attempted move. It never touches the random stream.
 Stats sweep(System& sys, StepSizes& steps, double temperature, std::mt19937_64& rng,
-            MoveLog* log = nullptr);
+            MoveLog* log = nullptr, const SweepMix& mix = {});
 
 bool try_translate_group(System& sys, const std::vector<int>& group, const StepSizes& steps,
                          double temperature, std::mt19937_64& rng);

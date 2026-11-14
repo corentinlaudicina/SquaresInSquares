@@ -1,5 +1,6 @@
 // engine --N <n> --seed <s> (--time <sec> | --kicks <k>) --out <file.json> [--schedule <file.json>]
-//        [--start <file>] [--telemetry <file>] [--mode shrink|cycle]
+//        [--start <file>] [--telemetry <file>] [--mode shrink|cycle]   (--mode only without --schedule)
+//        engine --list-schedule-keys
 //
 // Runs one search, legalizes its best packing (legalize.hpp) and writes it as sqpack/1, plus a
 // telemetry JSON (default: <out minus .json>.telemetry.json) and a one-line summary on stdout.
@@ -7,6 +8,7 @@
 // it goes. Exit 0 = wrote a solution, 1 = run failed (no packing), 2 = usage error.
 
 #include "engine/protocol.hpp"
+#include "engine/schedule.hpp"
 #include "engine/solution_io.hpp"
 #include "legalize.hpp"
 
@@ -58,6 +60,10 @@ int main(int argc, char** argv) {
     std::string out, schedule, start, telemetry, mode = "shrink";
     for (int k = 1; k < argc; ++k) {
         const std::string a = argv[k];
+        if (a == "--list-schedule-keys") {
+            for (const std::string& f : field_names()) std::printf("%s\n", f.c_str());
+            return 0;
+        }
         if (k + 1 >= argc) usage(a + " needs a value");
         const char* v = argv[++k];
         if (a == "--N") n = static_cast<int>(integer(v, "--N"));
@@ -74,7 +80,6 @@ int main(int argc, char** argv) {
     if (n < 1) usage("--N is required");
     if (out.empty()) usage("--out is required");
     if (time_s <= 0.0 && kicks <= 0) usage("give --time and/or --kicks");
-    if (!schedule.empty()) usage("--schedule is not implemented yet");  // step 3
     if (mode != "shrink" && mode != "cycle") usage("--mode must be shrink or cycle");
     if (start.empty()) {
         char p[64];
@@ -92,6 +97,13 @@ int main(int argc, char** argv) {
     if (static_cast<int>(seed_sys->particles.size()) != n) usage(start + " does not hold N squares");
 
     EngineConfig cfg = mode == "cycle" ? cycle_defaults() : shrink_defaults();
+    json sched_info = {{"name", "builtin-" + mode}};
+    if (!schedule.empty()) {
+        auto ps = load_schedule(schedule, &why);
+        if (!ps) usage(why);
+        cfg = ps->config;
+        sched_info = {{"name", ps->name}, {"hash", ps->hash}, {"file", schedule}, {"resolved", ps->resolved}};
+    }
     cfg.wall_seconds = time_s;
     cfg.max_kicks = kicks;
 
@@ -99,6 +111,7 @@ int main(int argc, char** argv) {
     json& tel = res.telemetry;
     tel["run"]["engine"] = ENGINE_VERSION;
     tel["run"]["start_file"] = start;
+    tel["run"]["schedule"] = sched_info;
 
     int rc = 1;
     json leg = {{"ok", false}};
@@ -109,6 +122,7 @@ int main(int argc, char** argv) {
                {"growth_steps", lr.growth_steps}, {"relax_iters", lr.relax_iterations},
                {"min_pair_gap", lr.report.min_pair_gap}, {"min_wall_gap", lr.report.min_wall_gap}};
         const json meta = {{"engine", ENGINE_VERSION}, {"seed", seed}, {"mode", cfg.mode},
+                           {"schedule", sched_info["name"]}, {"schedule_hash", sched_info.value("hash", "")},
                            {"start_file", start}, {"legalized", lr.ok}, {"side_raw", res.best_side},
                            {"wall_s", tel["budget"]["wall_s"]}};
         if (write_solution(out, legal, meta)) rc = 0;
@@ -128,7 +142,7 @@ int main(int argc, char** argv) {
         kick_text += " " + name + " " + std::to_string(k["impr"].get<long>()) + "/" + std::to_string(k["tries"].get<long>());
     }
     std::printf("n=%d s%llu %s %.0fs %ld kicks: seed %.9f start %.9f -> best %.9f legal %.9f (%s) |%s | stop %s\n",
-                n, seed, cfg.mode.c_str(), tel["budget"].value("wall_s", 0.0), tel["budget"].value("kicks", 0L),
+                n, seed, sched_info["name"].get<std::string>().c_str(), tel["budget"].value("wall_s", 0.0), tel["budget"].value("kicks", 0L),
                 s.value("seed", 0.0), s.value("start", 0.0), s.value("best", 0.0), s.value("legal", 0.0),
                 leg["ok"].get<bool>() ? "LEGAL" : "NOT LEGAL", kick_text.c_str(),
                 tel["budget"].value("stop", std::string("?")).c_str());

@@ -50,7 +50,7 @@ MoveId kick(System& sys, std::mt19937_64& rng, const KickConfig& k, const LnmOpt
     StepSizes steps;
     steps.translate = k.shake_translate;
     steps.rotate = k.shake_rotate;
-    for (long s = 0; s < k.shake_sweeps; ++s) sweep(sys, steps, k.shake_T, rng, &log);
+    for (long s = 0; s < k.shake_sweeps; ++s) sweep(sys, steps, k.shake_T, rng, &log, k.mix);
     return MoveId::CycleShake;
 }
 
@@ -142,9 +142,19 @@ EngineResult run_engine(const System& seed, const EngineConfig& cfg, unsigned lo
         return cfg.max_kicks > 0 || cfg.wall_seconds > 0.0;
     };
 
+    EngineConfig c = cfg;  // the per-kick parameters, after the schedule's curves
     for (; more(); ++kick_no) {
+        if (cfg.update) {
+            double frac = 0.0;
+            if (cfg.max_kicks > 0) frac = static_cast<double>(kick_no) / static_cast<double>(cfg.max_kicks);
+            if (cfg.wall_seconds > 0.0) frac = std::max(frac, wall() / cfg.wall_seconds);
+            cfg.update(std::min(frac, 1.0), c);
+            lnm = c.kick.lnm;
+            lnm.log = &log;
+            lnm.watch = {};
+        }
         const double t0 = cpu_now();
-        const double p_large = large_prob(cfg.kick, stuck);
+        const double p_large = large_prob(c.kick, stuck);
         bool accepted = false, improved = false;
         double gain = 0.0;
         MoveId row;
@@ -153,7 +163,7 @@ EngineResult run_engine(const System& seed, const EngineConfig& cfg, unsigned lo
             const double target = best_side * (1.0 - eps);
             System trial = best;
             trial.rescale_box(target);
-            row = kick(trial, rng, cfg.kick, lnm, lnm_stats, log, p_large);
+            row = kick(trial, rng, c.kick, lnm, lnm_stats, log, p_large);
             const RelaxResult rr = relax(trial, RelaxOptions{});
             ++relax_calls;
             relax_iters += rr.iterations;
@@ -170,15 +180,15 @@ EngineResult run_engine(const System& seed, const EngineConfig& cfg, unsigned lo
             }
         } else {
             System trial = current;
-            row = kick(trial, rng, cfg.kick, lnm, lnm_stats, log, p_large);
+            row = kick(trial, rng, c.kick, lnm, lnm_stats, log, p_large);
             relax_free(trial, RelaxOptions{});
-            const CompressResult res = anneal(trial, cfg.cycle_ds, cfg.cycle_max_relax);
+            const CompressResult res = anneal(trial, c.cycle_ds, c.cycle_max_relax);
             ++compress_calls;
             compress_relax += res.relaxations;
             if (res.found) {
                 ++compress_found;
                 best_reached = std::min(best_reached, res.side);
-                const double T = cfg.side_T * res.side / std::sqrt(static_cast<double>(seed.particles.size()));
+                const double T = c.side_T * res.side / std::sqrt(static_cast<double>(seed.particles.size()));
                 const double d = res.side - current_side;
                 if (d <= 0.0 || (T > 0.0 && unit(rng) < std::exp(-d / T))) {
                     accepted = true;
@@ -211,23 +221,23 @@ EngineResult run_engine(const System& seed, const EngineConfig& cfg, unsigned lo
 
         if (shrink) {
             if (improved) {
-                eps = std::min(cfg.eps_max, eps * cfg.eps_up);
+                eps = std::min(c.eps_max, eps * c.eps_up);
                 stuck = 0;
             } else {
-                eps *= cfg.eps_down;
+                eps *= c.eps_down;
                 ++stuck;
             }
         } else {
             stuck = improved ? 0 : stuck + 1;
         }
-        if (stuck > 0 && stuck % std::max(1L, cfg.kick.escalate_every) == 0 &&
-            large_prob(cfg.kick, stuck) > large_prob(cfg.kick, stuck - 1)) {
+        if (stuck > 0 && stuck % std::max(1L, c.kick.escalate_every) == 0 &&
+            large_prob(c.kick, stuck) > large_prob(c.kick, stuck - 1)) {
             ++escalations;
         }
 
         if (improved && cfg.propagate) {
             pool.offer(best);
-            if (++new_bests % std::max(1L, cfg.propagate_every) == 0) {
+            if (++new_bests % std::max(1L, c.propagate_every) == 0) {
                 for (const auto& [m, g] : propagate(pool, static_cast<int>(seed.particles.size()), pull,
                                                     pool_rng, &log).improved) {
                     pool_gains[m] += g;
@@ -247,7 +257,7 @@ EngineResult run_engine(const System& seed, const EngineConfig& cfg, unsigned lo
                 stuck = 0;
             }
         }
-        if (!shrink && stuck >= cfg.restart_after) {
+        if (!shrink && stuck >= c.restart_after) {
             current = best;
             current_side = best_side;
             stuck = 0;

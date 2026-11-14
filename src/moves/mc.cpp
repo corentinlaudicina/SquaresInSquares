@@ -7,12 +7,6 @@
 namespace pack {
 namespace {
 
-// The sweep mix: see the table in mc.hpp for what each weight buys.
-constexpr double kWTranslate = 0.45;
-constexpr double kWRotate = 0.45;
-constexpr double kWFlip = 0.06;
-constexpr double kWShove = 0.04;
-
 // A sweep draws its regions from the defaults. There is nothing to tune here -- the sizes are drawn from a range rather than adapted, for the reason in lnm.hpp -- so threading a RegionWeights through sweep() and every one of its callers would buy nothing.
 constexpr RegionWeights kSweepRegions{};
 
@@ -196,7 +190,8 @@ bool try_box(System& sys, const StepSizes& steps, double pressure, double temper
 }
 
 Stats sweep(System& sys, StepSizes& steps, double temperature, std::mt19937_64& rng,
-            MoveLog* log) {
+            MoveLog* log, const SweepMix& mix) {
+    const double kWTranslate = mix.translate, kWRotate = mix.rotate, kWFlip = mix.flip, kWShove = mix.shove;
     Stats st;
     const int n = static_cast<int>(sys.particles.size());
     if (n == 0) return st;

@@ -11,10 +11,12 @@
 //   * telemetry is returned as JSON.
 
 #include "moves/lnm.hpp"
+#include "moves/mc.hpp"
 #include "system.hpp"
 
 #include <nlohmann/json.hpp>
 
+#include <functional>
 #include <string>
 
 namespace pack {
@@ -28,6 +30,7 @@ struct KickConfig {
     double shake_T = 0.05;
     double shake_translate = 0.1;
     double shake_rotate = 0.1;
+    SweepMix mix;              // move mix inside a shake sweep
     LnmOptions lnm;            // large-move weights and parameters; log/watch are set by the engine
 };
 
@@ -56,6 +59,10 @@ struct EngineConfig {
     // Budget: stop at whichever comes first. 0 = unlimited (at least one must be set).
     double wall_seconds = 0.0;
     long max_kicks = 0;
+
+    // Schedule curves (schedule.hpp): if set, called before every kick with the elapsed budget
+    // fraction in [0, 1] to update the per-kick parameters of a working copy of this config.
+    std::function<void(double, EngineConfig&)> update;
 };
 
 struct EngineResult {
