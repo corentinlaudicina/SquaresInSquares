@@ -28,10 +28,11 @@ __pycache__/
 # legacy record store: validated packings live in best/, the rest in non_validated_best/
 data/best/
 non_validated_best/
-best/.lock
-best/*.tmp
 queue.yaml
 
 # editor / OS / local tool settings
 .DS_Store
 .claude/settings.local.json
+
+# packings: kept on disk, synced outside git
+best/
