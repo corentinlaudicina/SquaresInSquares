@@ -1,0 +1,10 @@
+# Copy to queue.yaml and edit; run with:  .venv/bin/python tools/runner.py --queue queue.yaml --workers 4
+defaults:
+  schedule: schedules/shrink-baseline.json
+  time: 600          # wall seconds per job
+  start: best        # best | seed | <path>
+  seeds: [1]
+jobs:
+  - {N: 29, seeds: [1, 2, 3]}
+  - {N: "100-104", time: 300, schedule: schedules/compress-baseline.json}
+  - {N: [37, 53], seeds: 2, kicks: 50}   # kicks: count budget, reproducible

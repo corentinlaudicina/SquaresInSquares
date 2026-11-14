@@ -1,6 +1,7 @@
 // engine --N <n> --seed <s> (--time <sec> | --kicks <k>) --out <file.json> [--schedule <file.json>]
 //        [--start <file>] [--telemetry <file>] [--mode shrink|cycle]   (--mode only without --schedule)
 //        engine --list-schedule-keys
+//        engine --legalize <in> --out <out.json>
 //
 // Runs one search, legalizes its best packing (legalize.hpp) and writes it as sqpack/1, plus a
 // telemetry JSON (default: <out minus .json>.telemetry.json) and a one-line summary on stdout.
@@ -57,7 +58,7 @@ int main(int argc, char** argv) {
     unsigned long long seed = 1;
     double time_s = 0.0;
     long kicks = 0;
-    std::string out, schedule, start, telemetry, mode = "shrink";
+    std::string out, schedule, start, telemetry, mode = "shrink", legalize_only;
     for (int k = 1; k < argc; ++k) {
         const std::string a = argv[k];
         if (a == "--list-schedule-keys") {
@@ -75,7 +76,22 @@ int main(int argc, char** argv) {
         else if (a == "--start") start = v;
         else if (a == "--telemetry") telemetry = v;
         else if (a == "--mode") mode = v;
+        else if (a == "--legalize") legalize_only = v;
         else usage("unknown option " + a);
+    }
+    // engine --legalize <in> --out <out.json>: no search, only legalization (for imports).
+    if (!legalize_only.empty()) {
+        if (out.empty()) usage("--out is required");
+        std::string why;
+        auto sys = read_solution(legalize_only, &why);
+        if (!sys) usage(why);
+        const LegalizeResult lr = legalize(*sys);
+        const json meta = {{"engine", ENGINE_VERSION}, {"legalized", lr.ok}, {"legalized_from", legalize_only},
+                           {"side_raw", lr.side_before}};
+        if (!write_solution(out, *sys, meta)) return 1;
+        std::printf("legalize %s: %.12f -> %.12f (%s, %d growths)\n", legalize_only.c_str(), lr.side_before,
+                    lr.side_after, lr.ok ? "LEGAL" : "NOT LEGAL", lr.growth_steps);
+        return lr.ok ? 0 : 1;
     }
     if (n < 1) usage("--N is required");
     if (out.empty()) usage("--out is required");
