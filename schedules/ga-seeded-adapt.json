@@ -1,0 +1,63 @@
+{
+  "schema": "sqpack.schedule/1",
+  "name": "ga-seeded-adapt",
+  "description": "ga-seeded with the adaptive ratchet: probes 1e-6 below the best and grows or halves the step per island (ratchet.adapt). For production runs from near-optimal packings.",
+  "mode": "ga",
+  "start": {
+    "mirror": false
+  },
+  "ga": {
+    "population": 7,
+    "offspring": 27,
+    "prefilter": 0.6,
+    "fine_frac": 0.5,
+    "threads": 4,
+    "penalty": "depth2",
+    "history": 3,
+    "tol": 1e-09,
+    "rough_cap": 0.05,
+    "rough_iters": 100,
+    "fine_cap": 0.0125,
+    "fine_iters": 150,
+    "fine_stages": 3,
+    "init_jiggle": 0.02,
+    "moves": {
+      "relocate": 0.1,
+      "jiggle_small": 0.25,
+      "jiggle_large": 0.15,
+      "cluster": 0.15,
+      "twist": 0.1,
+      "translate": 0.1,
+      "crossover": 0.15
+    },
+    "islands": 6,
+    "topology": "ring"
+  },
+  "ratchet": {
+    "shrink": 1e-06,
+    "adapt": true,
+    "min": 1e-09,
+    "max": 0.0002,
+    "up": 1.5,
+    "down": 0.5,
+    "patience": 8
+  },
+  "diversity": {
+    "elite": 1.0,
+    "threshold": 0.05,
+    "hist_threshold": 0.05,
+    "metric": "auto",
+    "assign_max_n": 40
+  },
+  "island": {
+    "patience": 30,
+    "threshold": 0.001
+  },
+  "seed": {
+    "up": true,
+    "up_count": 2,
+    "down": true,
+    "down_tries": 400,
+    "lattice": true
+  }
+}

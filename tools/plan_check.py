@@ -30,6 +30,7 @@ import plan_digest  # noqa: E402
 import runner  # noqa: E402
 
 GA_MIN_N = 82  # the recovery gates: shrink-capped below, the seeded GA from here (docs/AUDIT.md section 15)
+DEFAULT_GA = "schedules/ga-seeded-adapt.json"  # islands + seeding + adaptive ratchet: the production default
 
 
 def extract_plan(text):
@@ -99,10 +100,11 @@ def check_and_build(plan, root, engine, today):
         except (KeyError, ValueError):
             errs.append(f"job {i}: bad N {j.get('N')!r}")
             continue
-        closed = [n for n in ns if status.get(n) != "open"]
+        allowed = set(plan_digest.open_ns(root))  # open and inside the machine's focus range
+        closed = [n for n in ns if n not in allowed]
         if closed:  # never run them; dropping N only shrinks the plan, so the rest of it stands
-            warnings.append(f"job {i}: dropped N {closed[:8]} (not open: proven optima or out of range)")
-            ns = [n for n in ns if status.get(n) == "open"]
+            warnings.append(f"job {i}: dropped N {closed[:8]} (not open, or outside the focus range)")
+            ns = [n for n in ns if n in allowed]
             if not ns:
                 errs.append(f"job {i}: no open N left")
                 continue
@@ -113,6 +115,12 @@ def check_and_build(plan, root, engine, today):
                 errs.append(f"job {i}: variant {sched} may only run in an experiment (tag H<id>)")
         elif not (root / sched).exists():
             errs.append(f"job {i}: schedule {sched} does not exist")
+        if m.get("require_islands") and not re.fullmatch(r"H\d+", tag):
+            doc = variants.get(sched)
+            if doc is None and (root / sched).exists():
+                doc = json.loads((root / sched).read_text())
+            if doc is not None and not (doc.get("mode") == "ga" and int(doc.get("ga", {}).get("islands", 1)) >= 2):
+                errs.append(f"job {i}: {tag} jobs must use an island GA (mode ga, ga.islands >= 2); {sched} is not one")
         t = j.get("time")
         if not isinstance(t, (int, float)) or not 30 <= t <= 3600:
             errs.append(f"job {i}: time {t!r} not in [30, 3600] s")
@@ -143,13 +151,14 @@ def check_and_build(plan, root, engine, today):
 
 
 def fallback(root, today):
-    """The playbook default: top-ranked open N, shrink-capped below GA_MIN_N, ga-seeded above, 600 s, one seed."""
+    """The playbook default: top-ranked open N in focus, the island GA (shrink-polish below GA_MIN_N unless
+    islands are required), 1800 s, one seed."""
     m = plan_digest.machine(root)
-    slots = int(m["budget_hours"] * 3600 * m["workers"] // 600)
+    slots = int(m["budget_hours"] * 3600 * m["workers"] // 1800)
     rows = plan_digest.rank(root, plan_digest.load_ledger(root), dt.datetime.now(dt.timezone.utc))
     stamp = int(today.strftime("%Y%m%d"))
-    jobs = [{"N": r["N"], "time": 600, "tag": "fallback", "seeds": [stamp * 10],
-             "schedule": "schedules/ga-seeded.json" if r["N"] >= GA_MIN_N else "schedules/shrink-capped.json"}
+    jobs = [{"N": r["N"], "time": 1800, "tag": "fallback", "seeds": [stamp * 10],
+             "schedule": DEFAULT_GA if r["N"] >= GA_MIN_N or m.get("require_islands") else "schedules/shrink-polish.json"}
             for r in rows[:max(1, slots)]]
     return {"defaults": {"start": "best"}, "jobs": jobs}
 

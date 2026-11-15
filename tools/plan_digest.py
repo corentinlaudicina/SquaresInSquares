@@ -32,7 +32,9 @@ def load_status(root):
 
 
 def open_ns(root):
-    return sorted(n for n, s in load_status(root).items() if s == "open")
+    """The open N inside the machine's focus range (planner/machine.json n_min, n_max)."""
+    m = machine(root)
+    return sorted(n for n, s in load_status(root).items() if s == "open" and m["n_min"] <= n <= m["n_max"])
 
 
 def load_ledger(root):
@@ -59,7 +61,7 @@ def best_sides(root):
 
 def machine(root):
     p = root / "planner" / "machine.json"
-    m = {"workers": 2, "budget_hours": 23.3, "cores": 8}
+    m = {"workers": 2, "budget_hours": 23.3, "cores": 8, "n_min": 1, "n_max": 1000, "require_islands": False}
     if p.exists():
         m.update(json.loads(p.read_text()))
     return m
@@ -132,10 +134,14 @@ def digest(root, now=None, top=30):
     day = [r for r in ledger if (t := when(r)) and now - t < dt.timedelta(days=1)]
     L = [f"# Planner digest  {now:%Y-%m-%d %H:%M} UTC", ""]
     L += ["## Machine", f"- workers {m['workers']} (GA jobs use 4 threads each), cores {m['cores']}, "
-          f"budget until the next plan: {m['budget_hours']:.1f} h of wall clock per worker", ""]
+          f"budget until the next plan: {m['budget_hours']:.1f} h of wall clock per worker",
+          f"- focus: N from {m['n_min']} to {m['n_max']} only (N outside it are dropped)"
+          + ("; exploit and explore jobs must use an island GA (mode ga, ga.islands >= 2); only H<id> "
+             "experiments may use other schedules" if m["require_islands"] else ""), ""]
     tried = {r["N"] for r in ledger}
     improved = {r["N"] for r in ledger if r.get("stored") == "best"}
-    L += ["## Coverage", f"- open N: {len(ns)} of {len(status)} (the rest are proven optima: never queue them)",
+    L += ["## Coverage", f"- open N in focus: {len(ns)} (of {sum(s == 'open' for s in status.values())} open, "
+          f"{len(status)} in all; the rest are proven optima or out of focus: never queue them)",
           f"- open N ever tried: {len(tried & set(ns))}, ever improved: {len(improved & set(ns))}",
           f"- the open N (only these may be queued): {ranges(ns)}",
           f"- last 24 h: {len(day)} jobs, {sum(r.get('stored') == 'best' for r in day)} improvements, "

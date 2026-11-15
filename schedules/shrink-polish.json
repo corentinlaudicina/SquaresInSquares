@@ -1,0 +1,84 @@
+{
+  "schema": "sqpack.schedule/1",
+  "name": "shrink-polish",
+  "description": "shrink-capped without the mirrored start: polishes the given packing (best/N) instead of rebuilding a mirrored one. For production runs.",
+  "mode": "shrink",
+  "start": {
+    "mirror": false
+  },
+  "prepare": {
+    "ds": 0.01,
+    "max_relax": 5000
+  },
+  "kick": {
+    "large_prob": {
+      "base": 0.1,
+      "max": 0.6,
+      "step": 0.1,
+      "every": 25
+    },
+    "shake": {
+      "sweeps": 100,
+      "T": 0.05,
+      "translate": 0.1,
+      "rotate": 0.1,
+      "mix": {
+        "translate": 0.45,
+        "rotate": 0.45,
+        "flip": 0.06,
+        "shove": 0.04
+      }
+    },
+    "lnm": {
+      "weights": {
+        "destroy": 0.4,
+        "strip": 0.3,
+        "corner": 0.2,
+        "loosen": 0.1,
+        "symmetrize": 0.0
+      },
+      "relax_iterations": 300,
+      "insert_tries": 12,
+      "snap_prob": 0.5,
+      "loosen": {
+        "grow": 0.03,
+        "sweeps": 20,
+        "soften": 0.1,
+        "soft_prob": 0.5
+      },
+      "regions": {
+        "disc": 0.2,
+        "band": 0.5,
+        "corner": 0.3,
+        "axis_weight": 1.0,
+        "diagonal_weight": 2.0
+      }
+    }
+  },
+  "shrink": {
+    "eps": 0.001,
+    "eps_min": 1e-07,
+    "eps_max": 0.05,
+    "on_success": 1.2,
+    "on_fail": 0.95,
+    "on_converge": "reset"
+  },
+  "propagate": {
+    "enabled": false,
+    "every": 1
+  },
+  "accept": {
+    "legal": true
+  },
+  "relax": {
+    "method": "capped",
+    "penalty": "depth2",
+    "history": 3,
+    "tol": 1e-09,
+    "rough_cap": 0.05,
+    "rough_iters": 150,
+    "fine_cap": 0.0125,
+    "fine_iters": 500,
+    "fine_stages": 3
+  }
+}

@@ -29,7 +29,7 @@ class Planner(unittest.TestCase):
             side = n ** 0.5 + (0.3 if n == 7 else 0.1)  # N = 7 packs worse than its neighbours
             (self.root / "best" / f"{n}.json").write_text(json.dumps({"side": side}))
         (self.root / "schedules" / "planner").mkdir(parents=True)
-        for s in ("ga", "ga-seeded", "shrink-capped"):
+        for s in ("ga", "ga-seeded", "ga-seeded-adapt", "shrink-capped", "shrink-polish"):
             shutil.copy(REPO / "schedules" / f"{s}.json", self.root / "schedules")
         (self.root / "planner").mkdir()
         (self.root / "planner" / "machine.json").write_text(json.dumps({"workers": 2, "cores": 8, "budget_hours": 1.0}))
@@ -109,7 +109,24 @@ class Planner(unittest.TestCase):
         ns = [j["N"] for j in q["jobs"]]
         self.assertTrue(ns and set(ns) <= set(OPEN))
         for j in q["jobs"]:
-            self.assertEqual(j["schedule"], "schedules/ga-seeded.json" if j["N"] >= 82 else "schedules/shrink-capped.json")
+            self.assertEqual(j["schedule"], "schedules/ga-seeded-adapt.json" if j["N"] >= 82 else "schedules/shrink-polish.json")
+
+    def test_focus_and_islands(self):
+        (self.root / "planner" / "machine.json").write_text(json.dumps(
+            {"workers": 2, "cores": 8, "budget_hours": 1.0, "n_min": 50, "n_max": 1000, "require_islands": True}))
+        base = {"N": [7, 90], "schedule": "schedules/ga-seeded-adapt.json", "time": 300, "seeds": 1, "tag": "exploit"}
+        q, _, e = self.check({"jobs": [base]})
+        self.assertEqual((e, q["jobs"][0]["N"]), ([], 90))  # 7 is open but outside the focus
+        self.assertTrue(any("outside the focus" in w for w in q["warnings"]))
+        e = self.check({"jobs": [{**base, "schedule": "schedules/shrink-polish.json"}]})[2]
+        self.assertTrue(any("island GA" in x for x in e))
+        e = self.check({"jobs": [{**base, "schedule": "schedules/ga.json"}]})[2]  # GA, but one island
+        self.assertTrue(any("island GA" in x for x in e))
+        q, _, e = self.check({"jobs": [{**base, "N": 90, "schedule": "schedules/shrink-polish.json", "tag": "H4"},
+                                       {**base, "N": 91, "time": 1500}]})
+        self.assertFalse(any("island GA" in x for x in e))  # an experiment may use another schedule
+        self.assertNotIn("| 7 |", plan_digest.digest(self.root).split("## Candidates")[1])
+        self.assertTrue(all(j["schedule"].endswith("ga-seeded-adapt.json") for j in plan_check.fallback(self.root, self.today)["jobs"]))
 
 
 if __name__ == "__main__":

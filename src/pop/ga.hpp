@@ -46,7 +46,15 @@ struct GAConfig {
     long fine_stages = 3;
     double tol = 1e-9;         // residual depth / protrusion that counts as feasible for the ratchet
 
-    double ratchet_shrink = 2e-4;  // relative shrink of h at each ratchet
+    double ratchet_shrink = 2e-4;  // relative shrink of h at each ratchet (with ratchet_adapt: the first step)
+    // Adaptive ratchet: each island keeps the box it last fitted in (fit_h) and a step eps. A fit sets
+    // fit_h = h and eps *= ratchet_up (capped at ratchet_max); `ratchet_patience` generations without a
+    // fit set eps *= ratchet_down (floored at ratchet_min) and loosen the target back to fit_h (1 - eps).
+    // Off by default (the gated behaviour: a fixed step). On, a GA started from a near-optimal packing
+    // probes just below it instead of 0.02% below, where it never fits.
+    bool ratchet_adapt = false;
+    double ratchet_min = 1e-9, ratchet_max = 2e-4, ratchet_up = 1.5, ratchet_down = 0.5;
+    long ratchet_patience = 8;
     double init_jiggle = 0.02;     // sigma of the noise that makes the initial population from the start
 
     // Islands (Phase 3 item 6). Each island is a population with its own ratchet box; the legal best

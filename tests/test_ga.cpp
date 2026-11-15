@@ -176,6 +176,26 @@ void test_seeding() {
     std::printf("  seeding n=5: %zu legal candidates (%d up, %d down, %d lattice)\n", c.size(), up, down, lattice);
 }
 
+void test_adaptive_ratchet_polishes() {
+    // A 5x5 grid with 1e-4 relative slack. Its optimum is side 5. The fixed 2e-4 ratchet aims below 5
+    // at once and never fits; the adaptive one probes 1e-6 below and closes the gap.
+    System loose = to_system(grid(5, 1e-4));
+    GAConfig cfg;
+    cfg.population = 8;
+    cfg.offspring = 24;
+    cfg.threads = 2;
+    const GAOutcome fixed = run_ga(loose, cfg, 3, 0.0, 40);
+    cfg.ratchet_adapt = true;
+    cfg.ratchet_shrink = 1e-6;
+    const GAOutcome adapt = run_ga(loose, cfg, 3, 0.0, 40);
+    const double start = fixed.telemetry["side"]["start_legal"].get<double>();  // the legalized loose grid
+    std::printf("  adaptive ratchet, 5x5 + 1e-4: fixed %.9f, adaptive %.9f (start %.9f, optimum 5)\n",
+                fixed.best_side, adapt.best_side, start);
+    assert(fixed.best_side > start - 1e-9);           // the fixed step never fits
+    assert(adapt.best_side < 5.0 + 0.25 * (start - 5.0));  // the adaptive one closes most of the gap
+    assert(strict_report(adapt.best).ok());
+}
+
 }  // namespace
 
 int main() {
@@ -186,5 +206,6 @@ int main() {
     test_small_ga_is_legal_and_thread_independent();
     test_islands();
     test_seeding();
+    test_adaptive_ratchet_polishes();
     std::printf("ga: all tests passed\n");
 }

@@ -76,6 +76,9 @@ struct Island {
     double h = 0.0;
     long ratchets = 0, resets = 0, since_progress = 0, longest_stall = 0;
     double mark = std::numeric_limits<double>::infinity();  // best residual at the last progress
+    double fit_h = 0.0;   // adaptive ratchet: the box this island last fitted in (or its source's side)
+    double eps = 0.0;     // adaptive ratchet: the current relative step below fit_h
+    long since_adjust = 0, loosened = 0;
 };
 
 void sort_pop(std::vector<Individual>& pop) {
@@ -105,7 +108,10 @@ void seed_island(Island& is, const std::vector<const System*>& from, double h, c
     relax_all(is.pop, all, fine_params(c), be, L);
     sort_pop(is.pop);
     is.since_progress = 0;
+    is.since_adjust = 0;
     is.mark = is.pop.front().info.cost;
+    is.fit_h = h / (1.0 - c.ratchet_shrink);  // the side the target was taken below
+    if (!(is.eps > 0.0)) is.eps = c.ratchet_shrink;
 }
 
 std::vector<int> neighbours(int i, int k, int topology) {
@@ -297,7 +303,14 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
                     ++legal_improvements;
                     side_trace.push_back({wall(), out.best_side});
                 }
-                is.h = std::min(is.h, out.best_side) * (1.0 - c.ratchet_shrink);
+                if (c.ratchet_adapt) {
+                    is.fit_h = std::min(is.h, out.best_side);
+                    is.eps = std::min(c.ratchet_max, is.eps * c.ratchet_up);
+                    is.h = is.fit_h * (1.0 - is.eps);
+                    is.since_adjust = 0;
+                } else {
+                    is.h = std::min(is.h, out.best_side) * (1.0 - c.ratchet_shrink);
+                }
                 for (Individual& x : pop) rescale(x.p, is.h);
                 std::vector<int> all(pop.size());
                 std::iota(all.begin(), all.end(), 0);
@@ -310,6 +323,18 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
             } else if (pop.front().info.cost < is.mark * (1.0 - c.island_threshold)) {
                 is.mark = pop.front().info.cost;
                 is.since_progress = 0;
+            } else if (c.ratchet_adapt && ++is.since_adjust >= c.ratchet_patience && is.eps > c.ratchet_min) {
+                // no fit for a while: halve the step and loosen the target back towards the last fit
+                is.eps = std::max(c.ratchet_min, is.eps * c.ratchet_down);
+                is.h = std::min(is.fit_h, out.best_side) * (1.0 - is.eps);
+                for (Individual& x : pop) rescale(x.p, is.h);
+                std::vector<int> all(pop.size());
+                std::iota(all.begin(), all.end(), 0);
+                relax_all(pop, all, fine_params(c), be, L);
+                sort_pop(pop);
+                is.since_adjust = 0;
+                ++is.loosened;
+                is.mark = pop.front().info.cost;
             } else {
                 is.longest_stall = std::max(is.longest_stall, ++is.since_progress);
                 if (c.island_patience > 0 && is.since_progress >= c.island_patience) {
@@ -352,6 +377,7 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
         longest_stall = std::max(longest_stall, is.longest_stall);
         h_final = std::min(h_final, is.h);
         islands.push_back({{"source", island_source[static_cast<size_t>(&is - isl.data())]}, {"h", is.h}, {"ratchets", is.ratchets}, {"resets", is.resets},
+                           {"eps", is.eps}, {"loosened", is.loosened},
                            {"best_cost", is.pop.front().info.cost}, {"longest_stall", is.longest_stall}});
     }
     tel["ga"] = {{"generations", generation}, {"ratchets", ratchets}, {"legal_improvements", legal_improvements},
