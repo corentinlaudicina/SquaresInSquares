@@ -29,7 +29,7 @@ class Planner(unittest.TestCase):
             side = n ** 0.5 + (0.3 if n == 7 else 0.1)  # N = 7 packs worse than its neighbours
             (self.root / "best" / f"{n}.json").write_text(json.dumps({"side": side}))
         (self.root / "schedules" / "planner").mkdir(parents=True)
-        for s in ("ga", "ga-seeded", "ga-seeded-adapt", "shrink-capped", "shrink-polish"):
+        for s in ("ga", "ga-seeded", "ga-seeded-adapt", "ga-explore", "shrink-capped", "shrink-polish"):
             shutil.copy(REPO / "schedules" / f"{s}.json", self.root / "schedules")
         (self.root / "planner").mkdir()
         (self.root / "planner" / "machine.json").write_text(json.dumps({"workers": 2, "cores": 8, "budget_hours": 1.0}))
@@ -109,7 +109,7 @@ class Planner(unittest.TestCase):
         ns = [j["N"] for j in q["jobs"]]
         self.assertTrue(ns and set(ns) <= set(OPEN))
         for j in q["jobs"]:
-            self.assertEqual(j["schedule"], "schedules/ga-seeded-adapt.json" if j["N"] >= 82 else "schedules/shrink-polish.json")
+            self.assertEqual(j["schedule"], "schedules/ga-explore.json" if j["N"] >= 82 else "schedules/shrink-polish.json")
 
     def test_focus_and_islands(self):
         (self.root / "planner" / "machine.json").write_text(json.dumps(
@@ -126,7 +126,7 @@ class Planner(unittest.TestCase):
                                        {**base, "N": 91, "time": 1500}]})
         self.assertFalse(any("island GA" in x for x in e))  # an experiment may use another schedule
         self.assertNotIn("| 7 |", plan_digest.digest(self.root).split("## Candidates")[1])
-        self.assertTrue(all(j["schedule"].endswith("ga-seeded-adapt.json") for j in plan_check.fallback(self.root, self.today)["jobs"]))
+        self.assertTrue(all(j["schedule"].endswith("ga-explore.json") for j in plan_check.fallback(self.root, self.today)["jobs"]))
 
 
 if __name__ == "__main__":

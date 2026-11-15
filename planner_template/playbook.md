@@ -3,9 +3,12 @@
 Evidence-backed rules. The planner appends a line only for a confirmed hypothesis (citing its id).
 Initial rules from the Phase 3 gates (docs/AUDIT.md section 15; 20 N x 2 seeds x 45 s per run):
 
-- **Production schedule: `schedules/ga-seeded-adapt.json` for every N** (6 seeded islands on a ring and
-  the adaptive ratchet). The machine enforces an island GA for exploit and explore jobs, and focuses on
-  N > 300 for now (see the digest).
+- **Production schedule: `schedules/ga-explore.json` for every N** (since 2026-11-15, Corentin's call):
+  6 seeded islands on a ring, the adaptive ratchet, large moves (destroy, strip, corner) and 2 explorer
+  slots per island. The machine enforces an island GA for exploit and explore jobs and focuses on N > 300.
+- `ga-seeded-adapt` (the same without large moves and explorers) collapsed onto the record within minutes:
+  every island's champion identical to it. It only polishes. Whether ga-explore improves best/ more often
+  per job-hour is open: test it as a hypothesis with paired jobs on the same N.
 - Never use `ga-seeded` (fixed ratchet) or `shrink-capped` (mirrored start) from best/: from a
   near-optimal packing the fixed ratchet's first target (0.02% below) never fits and the mirror destroys
   the start. The first 22 live runs ended at best/ exactly (ga-seeded) or worse (shrink-capped, median

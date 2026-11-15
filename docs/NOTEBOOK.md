@@ -87,3 +87,18 @@ relaxation 1.33x faster on one thread, 1.45x on eight.
 Daily entries from here on are drafted by `tools/notebook_entry.py` and published with
 `tools/publish_notebook.sh`.
 
+
+## 2026-11-15: the island GA only polished; exploration added
+
+Live snapshots of the first `ga-seeded-adapt` jobs (N = 634) showed every island's champion identical to
+the record within minutes: no large moves in the GA (the biggest touched ~25 of 634 squares), elitist
+selection that always keeps the record's copy, and stalled islands reset from the record. It was a local
+polisher, not an explorer.
+
+- Added large moves to the GA (destroy a disc up to 12% of the side, re-lay a strip at 0/45/90/135
+  degrees, re-lay a corner block), filters that keep each move type's share, 3x relaxation for
+  large-move children, 2 explorer slots per island, and island resets from the island's own seed.
+- 5 minutes at N = 634 from the record: 4 of 6 islands stayed structurally different, corner rebuilds
+  survived selection 119 times in 482, strips 26 / 523, destroys 18 / 810. No record yet.
+- **Decision** (Corentin): switch production to `ga-explore` now; the earlier schedule stays available
+  for a paired comparison.

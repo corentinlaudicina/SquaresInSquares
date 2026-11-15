@@ -30,7 +30,7 @@ import plan_digest  # noqa: E402
 import runner  # noqa: E402
 
 GA_MIN_N = 82  # the recovery gates: shrink-capped below, the seeded GA from here (docs/AUDIT.md section 15)
-DEFAULT_GA = "schedules/ga-seeded-adapt.json"  # islands + seeding + adaptive ratchet: the production default
+DEFAULT_GA = "schedules/ga-explore.json"  # islands + seeding + adaptive ratchet + large moves: production default
 
 
 def extract_plan(text):
