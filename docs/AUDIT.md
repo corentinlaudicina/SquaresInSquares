@@ -393,3 +393,13 @@ D4 canonicalisation exist, so Phase 3 items 3 and 7 are partly built. Phase 3 it
   degrades them. The fair gate is **recovery**: every schedule starts from a legal, genuinely different
   and worse arrangement (`runs/starts/recovery/`, the item-2 baseline outputs) and is scored against
   best/. Probe: GA n=29 5.9958 -> 5.9645 in 45 s (26 ratchets); n=82 9.5906 -> 9.5363 (target 9.5355).
+- **Recovery gate, items 2-6** (20 train N x 2 seeds x 45 s, starts = `runs/starts/recovery/`, target = best/;
+  report `runs/bench/recovery/report.md`). Mean change of the legal side vs the start: shrink-baseline
+  +0.26% (the start-up mirror degrades it), shrink-capped +0.08%, ga-nodiv -0.17%, ga -0.14%, ga-islands -0.15%.
+  - Items 3-4 (ratchet GA, `ga-nodiv`) **pass**: 32/4/4 vs shrink-baseline. Against shrink-capped it wins
+    13/3/2 for N >= 82 and loses 6/14/2 for N <= 65: the two are complementary, pick by N.
+  - Item 5 (diversity, `ga` vs `ga-nodiv`) **fails**: 5/15/20. Selection time and untuned thresholds
+    (the histogram one above 40 squares) cost more than the spread gains; worst at N = 200 and 800.
+  - Item 6 (islands) **inconclusive**: beats `ga` 17/6/17 but only 12/11/17 vs `ga-nodiv`; islands were run
+    with diversity on, so islands without diversity is the test still owed.
+  - Kernel optimisations (deepest-axis gradient, Verlet list): relaxation 1.33x faster on 1 thread, 1.45x on 8.
