@@ -1,4 +1,5 @@
 #include "pop/relax_capped.hpp"
+#include "pop/symmetric.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -18,13 +19,16 @@ bool within(const CostInfo& c, double tol) { return c.max_depth <= tol && c.max_
 
 }  // namespace
 
-CappedStats relax_capped(Packing& p, const CappedParams& prm, Workspace& ws) {
-    const size_t N3 = p.xyt.size();
+// The relaxation over a variable vector x (x, y, theta per square), whatever it encodes. `raw(g)`
+// returns the cost at x and writes its gradient with respect to x into g.
+template <class Raw>
+CappedStats relax_core(std::vector<double>& x, Raw raw, const CappedParams& prm, Workspace& ws) {
+    const size_t N3 = x.size();
     const size_t m = static_cast<size_t>(std::max(1, prm.history));
     ws.g.resize(N3);
     ws.g_old.resize(N3);
     ws.d.resize(N3);
-    ws.best = p.xyt;
+    ws.best = x;
     ws.hist_s.resize(m * N3);
     ws.hist_y.resize(m * N3);
     ws.rho.resize(m);
@@ -32,7 +36,7 @@ CappedStats relax_capped(Packing& p, const CappedParams& prm, Workspace& ws) {
 
     // Gradient in the scaled variables (x, y, R theta).
     const auto eval = [&](double* g) {
-        const CostInfo ci = cost_grad(p, prm.penalty, ws, g);
+        const CostInfo ci = raw(g);
         for (size_t i = 2; i < N3; i += 3) g[i] /= kR;
         return ci;
     };
@@ -80,7 +84,7 @@ CappedStats relax_capped(Packing& p, const CappedParams& prm, Workspace& ws) {
             const double scale = (k == 0 || big > stage.cap) ? stage.cap / big : 1.0;
             for (size_t i = 0; i < N3; ++i) {
                 d[i] *= scale;
-                p.xyt[i] += (i % 3 == 2) ? d[i] / kR : d[i];
+                x[i] += (i % 3 == 2) ? d[i] / kR : d[i];
             }
 
             std::swap(ws.g, ws.g_old);
@@ -104,7 +108,7 @@ CappedStats relax_capped(Packing& p, const CappedParams& prm, Workspace& ws) {
             cur = next;
             if (cur.cost < best.cost) {
                 best = cur;
-                ws.best = p.xyt;
+                ws.best = x;
             }
             if (within(cur, prm.tol)) {
                 st.reached = true;
@@ -113,10 +117,19 @@ CappedStats relax_capped(Packing& p, const CappedParams& prm, Workspace& ws) {
             }
         }
     }
-    p.xyt = ws.best;
+    x = ws.best;
     st.info = best;
     st.reached = within(best, prm.tol);
     return st;
+}
+
+CappedStats relax_capped(Packing& p, const CappedParams& prm, Workspace& ws) {
+    return relax_core(p.xyt, [&](double* g) { return cost_grad(p, prm.penalty, ws, g); }, prm, ws);
+}
+
+CappedStats relax_symmetric(Packing& gen, const SymLayout& L, const CappedParams& prm, Workspace& ws) {
+    if (L.sym == Sym::None) return relax_capped(gen, prm, ws);
+    return relax_core(gen.xyt, [&](double* g) { return cost_symmetric(gen, L, prm.penalty, ws, g); }, prm, ws);
 }
 
 }  // namespace pack

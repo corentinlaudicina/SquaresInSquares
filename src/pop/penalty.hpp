@@ -43,6 +43,9 @@ struct Workspace {
     Shape square = make_square(1.0);
     // relax_capped's buffers (relax_capped.cpp)
     std::vector<double> g, g_old, d, best, hist_s, hist_y, rho, alpha;
+    // symmetric genotypes (symmetric.cpp): the expanded packing and its gradient
+    Packing sym_full;
+    std::vector<double> sym_g;
 };
 
 // grad, if not null, has 3N entries: d cost / d (x, y, theta) per square.

@@ -110,6 +110,7 @@ const std::vector<Field>& fields() {
         BOOL("seed.down", ga.seeding.down),
         INT("seed.down_tries", ga.seeding.down_tries, false),
         BOOL("seed.lattice", ga.seeding.lattice),
+        CHOICE("ga.symmetry", ga.symmetry, "none", "c2", "c4"),
         INT("ga.islands", ga.islands, false),
         CHOICE("ga.topology", ga.topology, "ring", "full"),
         INT("island.patience", ga.island_patience, true),

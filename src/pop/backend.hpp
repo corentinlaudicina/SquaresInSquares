@@ -6,6 +6,7 @@
 // is ever approved, implements the same interface (float32 relax; legalization stays on the CPU).
 
 #include "pop/relax_capped.hpp"
+#include "pop/symmetric.hpp"
 #include "system.hpp"
 
 #include <condition_variable>
@@ -20,10 +21,12 @@ namespace pack {
 class RelaxBackend {
 public:
     virtual ~RelaxBackend() = default;
+    // `sym`, if given and not None, means the packings are generators of that symmetry (symmetric.hpp).
     virtual void relax_batch(std::vector<Packing>& batch, const CappedParams& prm,
-                             std::vector<CappedStats>& stats) = 0;
+                             std::vector<CappedStats>& stats, const SymLayout* sym = nullptr) = 0;
     // Cost only (no gradient, no relaxation): the GA's pre-filter.
-    virtual void cost_batch(const std::vector<Packing>& batch, Penalty pen, std::vector<CostInfo>& out) = 0;
+    virtual void cost_batch(const std::vector<Packing>& batch, Penalty pen, std::vector<CostInfo>& out,
+                            const SymLayout* sym = nullptr) = 0;
 };
 
 // A fixed pool; parallel_for(n, f) calls f(index, worker) for index in [0, n) and returns when all ran.
@@ -48,8 +51,10 @@ private:
 class CpuBackend : public RelaxBackend {
 public:
     explicit CpuBackend(int threads = 0);  // <= 0: hardware concurrency
-    void relax_batch(std::vector<Packing>& batch, const CappedParams& prm, std::vector<CappedStats>& stats) override;
-    void cost_batch(const std::vector<Packing>& batch, Penalty pen, std::vector<CostInfo>& out) override;
+    void relax_batch(std::vector<Packing>& batch, const CappedParams& prm, std::vector<CappedStats>& stats,
+                     const SymLayout* sym = nullptr) override;
+    void cost_batch(const std::vector<Packing>& batch, Penalty pen, std::vector<CostInfo>& out,
+                    const SymLayout* sym = nullptr) override;
     int threads() const { return pool_.size(); }
     void parallel_for(int n, const std::function<void(int, int)>& f) { pool_.parallel_for(n, f); }
 

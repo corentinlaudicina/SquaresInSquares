@@ -58,17 +58,25 @@ CpuBackend::CpuBackend(int threads)
     : pool_(threads > 0 ? threads : static_cast<int>(std::max(1u, std::thread::hardware_concurrency()))),
       ws_(static_cast<size_t>(pool_.size())) {}
 
-void CpuBackend::relax_batch(std::vector<Packing>& batch, const CappedParams& prm, std::vector<CappedStats>& stats) {
+void CpuBackend::relax_batch(std::vector<Packing>& batch, const CappedParams& prm, std::vector<CappedStats>& stats,
+                             const SymLayout* sym) {
     stats.assign(batch.size(), CappedStats{});
+    const bool s = sym && sym->sym != Sym::None;
     pool_.parallel_for(static_cast<int>(batch.size()), [&](int i, int w) {
-        stats[static_cast<size_t>(i)] = relax_capped(batch[static_cast<size_t>(i)], prm, ws_[static_cast<size_t>(w)]);
+        Packing& p = batch[static_cast<size_t>(i)];
+        Workspace& ws = ws_[static_cast<size_t>(w)];
+        stats[static_cast<size_t>(i)] = s ? relax_symmetric(p, *sym, prm, ws) : relax_capped(p, prm, ws);
     });
 }
 
-void CpuBackend::cost_batch(const std::vector<Packing>& batch, Penalty pen, std::vector<CostInfo>& out) {
+void CpuBackend::cost_batch(const std::vector<Packing>& batch, Penalty pen, std::vector<CostInfo>& out,
+                            const SymLayout* sym) {
     out.assign(batch.size(), CostInfo{});
+    const bool s = sym && sym->sym != Sym::None;
     pool_.parallel_for(static_cast<int>(batch.size()), [&](int i, int w) {
-        out[static_cast<size_t>(i)] = cost_grad(batch[static_cast<size_t>(i)], pen, ws_[static_cast<size_t>(w)], nullptr);
+        const Packing& p = batch[static_cast<size_t>(i)];
+        Workspace& ws = ws_[static_cast<size_t>(w)];
+        out[static_cast<size_t>(i)] = s ? cost_symmetric(p, *sym, pen, ws, nullptr) : cost_grad(p, pen, ws, nullptr);
     });
 }
 

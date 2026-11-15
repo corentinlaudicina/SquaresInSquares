@@ -21,6 +21,7 @@
 #include "pop/moves.hpp"
 #include "pop/relax_capped.hpp"
 #include "pop/seeding.hpp"
+#include "pop/symmetric.hpp"
 #include "system.hpp"
 
 #include <nlohmann/json.hpp>
@@ -62,6 +63,10 @@ struct GAConfig {
     // candidates below) in a box just under that source's legal side; with one island the population
     // mixes all sources in the start's box. All off by default.
     SeedParams seeding;
+
+    // Symmetric genotypes (item 8): 0 = none, 1 = C2 (180 deg), 2 = C4 (90 deg, needs N mod 4 in {0,1};
+    // otherwise the run falls back to none and says so in telemetry). Individuals are then generators.
+    int symmetry = 0;
 
     MoveParams moves;
     DiversityParams diversity;
