@@ -39,7 +39,12 @@ HOLDOUT = [18, 28, 39, 48, 72, 120, 168, 300, 420, 1000]
 TOL = 1e-9
 
 
+STARTS = None  # --starts: a format string with {N}, e.g. runs/starts/recovery/n{N:04d}.json
+
+
 def start_file(n):
+    if STARTS:
+        return ROOT / STARTS.format(N=n)
     p = ROOT / "best" / f"{n}.json"
     return p if p.exists() else ROOT / "data" / "init_external" / f"n{n:04d}.cfg"
 
@@ -139,6 +144,7 @@ def main(argv=None):
     ap.add_argument("--time", type=float, default=120.0)
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) // 2))
     ap.add_argument("--targets", help="JSON {N: side}")
+    ap.add_argument("--starts", help="start file pattern with {N} (default: best/N.json, else the seed file)")
     ap.add_argument("--name", default=time.strftime("%Y%m%d_%H%M%S"))
     ap.add_argument("--combine", nargs="+", metavar="NAME",
                     help="no runs: merge runs/bench/<NAME>/results.jsonl into one report (same N, seeds, budget)")
@@ -155,6 +161,8 @@ def main(argv=None):
         (out / "report.md").write_text(text)
         print(text)
         return 0
+    global STARTS
+    STARTS = a.starts
     engine = ROOT / "build" / "engine"
     if not engine.exists():
         sys.exit("benchmark: make engine first")

@@ -382,3 +382,14 @@ D4 canonicalisation exist, so Phase 3 items 3 and 7 are partly built. Phase 3 it
   optimistic. The engine keeps that value for bit-reproduction but legalizes from the true extent.
 - Strict validity in float rejects 313/1000 seeds by <= 1.8e-15 (corners exactly on the wall, rounded
   outward). The legalizer's refit (exact shifts on an ulp grid plus a 4-ulp margin) fixes these at a cost of ~1e-14.
+
+## 15. Phase 3 gate notes
+
+- **Item 2 gate** (20 train N x 2 seeds x 45 s, starts = best/, target = best/): `shrink-capped`
+  (depth2 penalty + capped L-BFGS + legal acceptance + eps reset) beats `shrink-baseline` 25 wins /
+  3 losses / 12 ties on legal side; `shrink-legal` (legal acceptance alone) does not (9/13/18).
+- **Starting from best/ cannot gate the GA.** best/ holds the strong seeds, the GA (no mirror) returns
+  them untouched (0 ratchets in 80 runs) and "wins" 36/0/4 only because the baselines' start-up mirror
+  degrades them. The fair gate is **recovery**: every schedule starts from a legal, genuinely different
+  and worse arrangement (`runs/starts/recovery/`, the item-2 baseline outputs) and is scored against
+  best/. Probe: GA n=29 5.9958 -> 5.9645 in 45 s (26 ratchets); n=82 9.5906 -> 9.5363 (target 9.5355).
