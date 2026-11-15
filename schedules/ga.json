@@ -1,17 +1,44 @@
 {
   "schema": "sqpack.schedule/1",
   "name": "ga",
-  "description": "Phase 3 items 3-5: fixed-box ratchet GA with diversity-aware selection (after jcottaar/packing, CC BY-SA 4.0). Budget: --time, or --kicks = generations.",
+  "description": "Phase 3 default GA (items 3-4, gated): fixed-box ratchet over a population, overproduction, pre-filter, rough/fine capped relaxation, selection by fitness. Best for N >= 82; shrink-capped is better for small N. After jcottaar/packing (CC BY-SA 4.0).",
   "mode": "ga",
-  "start": { "mirror": false },
-  "ga": {
-    "population": 40, "offspring": 160, "prefilter": 0.6, "fine_frac": 0.5, "threads": 4,
-    "penalty": "depth2", "history": 3, "tol": 1e-9,
-    "rough_cap": 0.05, "rough_iters": 100, "fine_cap": 0.0125, "fine_iters": 150, "fine_stages": 3,
-    "init_jiggle": 0.02,
-    "moves": { "relocate": 0.10, "jiggle_small": 0.25, "jiggle_large": 0.15, "cluster": 0.15,
-               "twist": 0.10, "translate": 0.10, "crossover": 0.15 }
+  "start": {
+    "mirror": false
   },
-  "ratchet": { "shrink": 2e-4 },
-  "diversity": { "elite": 0.25, "threshold": 0.05, "hist_threshold": 0.05, "metric": "auto", "assign_max_n": 40 }
+  "ga": {
+    "population": 40,
+    "offspring": 160,
+    "prefilter": 0.6,
+    "fine_frac": 0.5,
+    "threads": 4,
+    "penalty": "depth2",
+    "history": 3,
+    "tol": 1e-09,
+    "rough_cap": 0.05,
+    "rough_iters": 100,
+    "fine_cap": 0.0125,
+    "fine_iters": 150,
+    "fine_stages": 3,
+    "init_jiggle": 0.02,
+    "moves": {
+      "relocate": 0.1,
+      "jiggle_small": 0.25,
+      "jiggle_large": 0.15,
+      "cluster": 0.15,
+      "twist": 0.1,
+      "translate": 0.1,
+      "crossover": 0.15
+    }
+  },
+  "ratchet": {
+    "shrink": 0.0002
+  },
+  "diversity": {
+    "elite": 1.0,
+    "threshold": 0.05,
+    "hist_threshold": 0.05,
+    "metric": "auto",
+    "assign_max_n": 40
+  }
 }

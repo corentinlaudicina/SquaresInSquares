@@ -69,7 +69,9 @@ struct GAConfig {
     int symmetry = 0;
 
     MoveParams moves;
-    DiversityParams diversity;
+    // Off by default (elite = 1: survivors by fitness only): item 5 did not pass its gate
+    // (docs/AUDIT.md section 15). schedules/ga-div.json turns it on for tuning.
+    DiversityParams diversity{.elite = 1.0};
 };
 
 struct GAOutcome {

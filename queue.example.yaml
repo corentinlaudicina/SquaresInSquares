@@ -1,10 +1,11 @@
-# Copy to queue.yaml and edit; run with:  .venv/bin/python tools/runner.py --queue queue.yaml --workers 4
+# Copy to queue.yaml and edit; run with:  .venv/bin/python tools/runner.py --queue queue.yaml --workers 2
+# Defaults follow the Phase 3 gates (docs/AUDIT.md section 15): shrink-capped for small N, the GA for N >= 82.
+# GA jobs use 4 relaxation threads each (ga.threads): keep workers x 4 near the core count.
 defaults:
-  schedule: schedules/shrink-baseline.json
   time: 600          # wall seconds per job
   start: best        # best | seed | <path>
   seeds: [1]
 jobs:
-  - {N: 29, seeds: [1, 2, 3]}
-  - {N: "100-104", time: 300, schedule: schedules/compress-baseline.json}
-  - {N: [37, 53], seeds: 2, kicks: 50}   # kicks: count budget, reproducible
+  - {N: "11-81", schedule: schedules/shrink-capped.json, seeds: 2}
+  - {N: "82-300", schedule: schedules/ga.json}
+  - {N: [37, 53], seeds: 2, kicks: 50, schedule: schedules/shrink-capped.json}   # kicks: count budget, reproducible
