@@ -51,6 +51,7 @@ if ! "$PY" tools/plan_check.py "$RAW"; then
     "$PY" tools/plan_check.py --fallback
 fi
 cp queue.json "$P/plans/$DAY.queue.json"
+"$PY" tools/notebook_entry.py || echo "notebook entry failed (not fatal)"
 
 # 5. run until tomorrow's deadline
 nohup "$PY" tools/runner.py --queue queue.json --workers "$WORKERS" --until "$UNTIL" >> "$P/runner.log" 2>&1 &

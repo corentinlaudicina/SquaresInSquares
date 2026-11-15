@@ -5,8 +5,9 @@ container, N = 1 to 1000. A C++20 engine does the search, an independent validat
 a runner keeps only verified improvements, and a daily planning step (one Claude call) chooses what to
 run next.
 
-This repository holds code, scripts and documentation only: no packings. Starting configurations and
-results (`data/init_external/`, `best/`) stay local.
+This repository is an open lab notebook: the code, the scripts, and a dated research log
+(`docs/NOTEBOOK.md`) of what was tried, what the benchmarks said, and what was decided. It holds no
+packings: starting configurations and results (`data/init_external/`, `best/`) stay local.
 
 ## How it works
 
@@ -80,4 +81,4 @@ Claude` line.
 
 ## License
 
-No license has been chosen yet: all rights reserved.
+MIT (see `LICENSE`). `third_party/nlohmann/` keeps its own MIT license.

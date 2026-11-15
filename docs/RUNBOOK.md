@@ -65,6 +65,9 @@ claude                              # once: log the CLI in
 tools/daily.sh                      # a cycle by hand: digest -> plan -> check -> runner until 06:40
 ```
 Only N marked `open` in `data/known_optima_1_1000.csv` are ever queued. Details: `docs/PLANNER.md`.
+The daily cycle also drafts a lab-notebook entry (`planner/notebook/<date>.md`, local);
+`tools/publish_notebook.sh` appends the new drafts to `docs/NOTEBOOK.md`, commits and pushes (by hand:
+this is what makes results public; `-n` previews).
 Watch it: `python3 tools/status.py` (one screen; `watch -n 60 python3 tools/status.py` to keep it open).
 
 ## Benchmark
