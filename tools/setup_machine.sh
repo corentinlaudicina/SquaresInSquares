@@ -32,9 +32,14 @@ say "3. python environment"
 say "4. best/"
 COUNT="$(ls best/*.json 2>/dev/null | wc -l | tr -d ' ')"
 if [ "$COUNT" -lt 1000 ]; then
-    echo "best/ holds $COUNT packings: importing the seeds (legalized, validated; ~20 min)."
-    echo "(To continue from another machine's best/ instead, stop here and copy that folder over.)"
-    .venv/bin/python tools/runner.py --import-legacy
+    if ls data/init_external/n*.cfg >/dev/null 2>&1; then
+        echo "best/ holds $COUNT packings: importing the seeds in data/init_external/ (legalized, validated; ~20 min)."
+        echo "(To continue from another machine's best/ instead, stop here and copy that folder over.)"
+        .venv/bin/python tools/runner.py --import-legacy
+    else
+        echo "WARNING: best/ holds $COUNT packings and there are no seeds in data/init_external/ (packings are not in git)."
+        echo "         Copy a best/ folder (or seed .cfg files) here before searching: jobs start from best/N.json."
+    fi
 else
     echo "best/ already holds $COUNT packings: kept"
 fi

@@ -2,6 +2,7 @@
 // and a C4 GA run that is legal and thread independent.
 
 #include "io/io.hpp"
+#include "init.hpp"
 #include "legalize.hpp"
 #include "pop/backend.hpp"
 #include "pop/diversity.hpp"
@@ -16,6 +17,13 @@
 using namespace pack;
 
 namespace {
+
+// A legal start built here, so the tests need no data files (the seed packings are not in git).
+System grid_start(int n) {
+    System s = grid_init(make_square(1.0), n);
+    legalize(s);
+    return s;
+}
 
 Packing random_gen(const SymLayout& L, double h, unsigned seed) {
     std::mt19937_64 rng(seed);
@@ -111,8 +119,7 @@ void test_relax_symmetric() {
 }
 
 void test_c4_ga() {
-    auto seed = load_record("data/init_external/n0017.cfg");
-    assert(seed);
+    const auto seed = std::optional<System>(grid_start(17));
     GAConfig cfg;
     cfg.population = 10;
     cfg.offspring = 30;
@@ -125,7 +132,7 @@ void test_c4_ga() {
     assert(a.telemetry["ga"]["symmetry"] == "c4" && a.telemetry["ga"]["generators"] == 5);
     assert(strict_report(a.best).ok() && a.best.particles.size() == 17);
     cfg.symmetry = 2;  // impossible for 18: falls back to none and says so
-    auto s18 = load_record("data/init_external/n0018.cfg");
+    const auto s18 = std::optional<System>(grid_start(18));
     const GAOutcome c = run_ga(*s18, cfg, 7, 0.0, 2);
     assert(c.telemetry["ga"]["symmetry"].get<std::string>().rfind("none", 0) == 0);
     std::printf("  C4 GA n=17: legal side %.9f, same on 1 and 4 threads; n=18 falls back to none\n", a.best_side);

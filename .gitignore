@@ -41,3 +41,6 @@ best/
 # planner live state (per machine) and its queue
 planner/
 queue.json
+
+# solutions: seed packings stay local (only code and scripts are published)
+data/init_external/

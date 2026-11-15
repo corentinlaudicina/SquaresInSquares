@@ -2,6 +2,7 @@
 // diversity selection, and a small GA run that is legal and identical on 1 and 4 threads.
 
 #include "io/io.hpp"
+#include "init.hpp"
 #include "legalize.hpp"
 #include "pop/backend.hpp"
 #include "pop/ga.hpp"
@@ -17,6 +18,13 @@
 using namespace pack;
 
 namespace {
+
+// A legal start built here, so the tests need no data files (the seed packings are not in git).
+System grid_start(int n) {
+    System s = grid_init(make_square(1.0), n);
+    legalize(s);
+    return s;
+}
 
 Packing grid(int k, double gap = 0.0) {
     Packing p;
@@ -96,8 +104,7 @@ void test_selection_spreads() {
 }
 
 void test_small_ga_is_legal_and_thread_independent() {
-    auto seed = load_record("data/init_external/n0010.cfg");
-    assert(seed);
+    const auto seed = std::optional<System>(grid_start(10));
     GAConfig cfg;
     cfg.population = 12;
     cfg.offspring = 40;
@@ -115,8 +122,7 @@ void test_small_ga_is_legal_and_thread_independent() {
 }
 
 void test_islands() {
-    auto seed = load_record("data/init_external/n0011.cfg");
-    assert(seed);
+    const auto seed = std::optional<System>(grid_start(11));
     GAConfig cfg;
     cfg.population = 8;
     cfg.offspring = 24;

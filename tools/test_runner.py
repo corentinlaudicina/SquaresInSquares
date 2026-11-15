@@ -143,14 +143,17 @@ class RunnerTest(unittest.TestCase):
 
     @unittest.skipUnless((REPO / "build" / "engine").exists(), "make engine first")
     def test_real_engine_job(self):
-        shutil.copy(REPO / "data" / "init_external" / "n0005.cfg", self.root / "data" / "init_external")
+        # a loose, valid 5-square start in best/ (the seed packings are not in git)
+        sq = [[0.5, 0.5, 0], [1.6, 0.5, 0], [0.5, 1.6, 0], [1.6, 1.6, 0], [2.7, 0.5, 0]]
+        (self.root / "best").mkdir(exist_ok=True)
+        (self.root / "best" / "5.json").write_text(json.dumps({"format": "sqpack/1", "n": 5, "side": 3.2, "squares": sq}))
         shutil.copy(REPO / "schedules" / "shrink-baseline.json", self.root / "schedules")
         self.engine = REPO / "build" / "engine"
         q = self.queue([{"N": 5, "seeds": [1], "kicks": 3, "time": 60, "schedule": "schedules/shrink-baseline.json"}])
         rs = self.run_queue(q)
         self.assertEqual(rs[0]["status"], "ok", rs[0])
         self.assertTrue(rs[0]["valid"], rs[0])
-        self.assertEqual(rs[0]["stored"], "best")
+        self.assertIn(rs[0]["stored"], ("best", None))  # the start is in best/: stored only if it improved
         out = subprocess.run([sys.executable, str(REPO / "tools" / "validate.py"), str(self.root / "best" / "5.json"),
                               "--n", "5"], capture_output=True, text=True)
         self.assertEqual(out.returncode, 0, out.stdout)

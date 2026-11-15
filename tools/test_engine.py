@@ -15,11 +15,20 @@ ROOT = Path(__file__).resolve().parent.parent
 ENGINE = ROOT / "build" / "engine"
 
 
+def start_file(tmp, n=10):
+    """A loose, valid packing of n squares (a 4-wide grid with gaps): the tests need no seed files."""
+    sq = [[0.55 + 1.1 * (i % 4), 0.55 + 1.1 * (i // 4), 0.0] for i in range(n)]
+    p = Path(tmp) / f"start{n}.json"
+    p.write_text(json.dumps({"format": "sqpack/1", "n": n, "side": 4.4, "squares": sq}))
+    return p
+
+
 def run(schedule, n=10, kicks=6, seed=1):
     tmp = tempfile.mkdtemp()
     out = Path(tmp) / "o.json"
     subprocess.run([str(ENGINE), "--N", str(n), "--seed", str(seed), "--kicks", str(kicks), "--schedule",
-                    str(ROOT / "schedules" / schedule), "--out", str(out)], cwd=ROOT, check=True, capture_output=True)
+                    str(ROOT / "schedules" / schedule), "--start", str(start_file(tmp, n)), "--out", str(out)],
+                   cwd=ROOT, check=True, capture_output=True)
     return validate.load(out), json.loads((Path(tmp) / "o.telemetry.json").read_text())
 
 
