@@ -403,3 +403,9 @@ D4 canonicalisation exist, so Phase 3 items 3 and 7 are partly built. Phase 3 it
   - Item 6 (islands) **inconclusive**: beats `ga` 17/6/17 but only 12/11/17 vs `ga-nodiv`; islands were run
     with diversity on, so islands without diversity is the test still owed.
   - Kernel optimisations (deepest-axis gradient, Verlet list): relaxation 1.33x faster on 1 thread, 1.45x on 8.
+- **Recovery gate, items 7-8** (same setup, new kernel; report `runs/bench/rec-78/report.md`), each vs
+  `ga-nodiv` (now `ga.json`). Item 7, seeding (`ga-seeded`): **passes**, 22/4/14, mean -0.50% vs start
+  (ga-nodiv -0.19%); against shrink-capped 16/0/2 for N >= 82, 10/10/2 for N <= 65. Its neighbours come
+  from the strong best/, which is the real use case but flatters it when neighbours are weak.
+  Item 8, symmetric genotypes: **fails**, C2 3/22/15, C4 2/16/8 on the 13 eligible N. Defaults now:
+  shrink-capped for N <= 81, ga-seeded for N >= 82; diversity, islands-only and symmetry opt-in.

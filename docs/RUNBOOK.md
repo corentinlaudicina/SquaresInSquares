@@ -30,11 +30,11 @@ build/engine --legalize <in.cfg|json> --out out.json   # legalize only, no searc
 | `compress-baseline` | cycle | the old `squares_compress`, bit for bit |
 | `shrink-legal` | shrink | + accept on the legal side |
 | `shrink-capped` | shrink | + depth^2 penalty, capped L-BFGS, eps reset (passed the item 2 gate) |
-| `ga` | ga | ratchet GA with diversity selection (items 3-5) |
-| `ga-nodiv` | ga | `ga` with selection by fitness only (item 5 control) |
-| `ga-islands` | ga | 4 islands on a ring, same total work as `ga` (item 6) |
-| `ga-seeded` | ga | 6 islands seeded from N+1, N-1, lattices (item 7) |
-| `ga-c2`, `ga-c4` | ga | symmetric genotypes (item 8); C4 only for N mod 4 in {0, 1} |
+| `ga` | ga | ratchet GA, selection by fitness (items 3-4, passed) |
+| `ga-seeded` | ga | **default for N >= 82**: 6 islands seeded from N+1, N-1, lattices (item 7, passed) |
+| `ga-div` | ga | `ga` with diversity selection (item 5, failed: for tuning only) |
+| `ga-islands` | ga | 4 islands on a ring, with diversity (item 6, inconclusive) |
+| `ga-c2`, `ga-c4` | ga | symmetric genotypes (item 8, failed); C4 only for N mod 4 in {0, 1} |
 
 The GA is explained in the headers of `src/pop/ga.hpp` (loop, ratchet, islands, seeding),
 `src/pop/moves.hpp`, `src/pop/diversity.hpp` and `src/pop/symmetric.hpp`. The mirror start

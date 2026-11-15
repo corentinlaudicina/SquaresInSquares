@@ -29,7 +29,7 @@ class Planner(unittest.TestCase):
             side = n ** 0.5 + (0.3 if n == 7 else 0.1)  # N = 7 packs worse than its neighbours
             (self.root / "best" / f"{n}.json").write_text(json.dumps({"side": side}))
         (self.root / "schedules" / "planner").mkdir(parents=True)
-        for s in ("ga", "shrink-capped"):
+        for s in ("ga", "ga-seeded", "shrink-capped"):
             shutil.copy(REPO / "schedules" / f"{s}.json", self.root / "schedules")
         (self.root / "planner").mkdir()
         (self.root / "planner" / "machine.json").write_text(json.dumps({"workers": 2, "cores": 8, "budget_hours": 1.0}))
@@ -105,7 +105,7 @@ class Planner(unittest.TestCase):
         ns = [j["N"] for j in q["jobs"]]
         self.assertTrue(ns and set(ns) <= set(OPEN))
         for j in q["jobs"]:
-            self.assertEqual(j["schedule"], "schedules/ga.json" if j["N"] >= 82 else "schedules/shrink-capped.json")
+            self.assertEqual(j["schedule"], "schedules/ga-seeded.json" if j["N"] >= 82 else "schedules/shrink-capped.json")
 
 
 if __name__ == "__main__":

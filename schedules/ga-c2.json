@@ -1,7 +1,7 @@
 {
   "schema": "sqpack.schedule/1",
   "name": "ga-c2",
-  "description": "Phase 3 item 8: schedules/ga.json with C2-symmetric genotypes (generators only; expansion for evaluation, gradients pulled back, symmetric crossover). Diversity off (item 5 failed its gate), so only this item differs from ga-nodiv.",
+  "description": "Phase 3 item 8: schedules/ga.json with C2-symmetric genotypes (generators only; expansion for evaluation, gradients pulled back, symmetric crossover). Diversity off (item 5 failed its gate), so only this item differs from schedules/ga.json.",
   "mode": "ga",
   "start": {
     "mirror": false

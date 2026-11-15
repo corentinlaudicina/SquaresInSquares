@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import plan_digest  # noqa: E402
 import runner  # noqa: E402
 
-GA_MIN_N = 82  # the recovery gate: shrink-capped below, the GA from here (docs/AUDIT.md section 15)
+GA_MIN_N = 82  # the recovery gates: shrink-capped below, the seeded GA from here (docs/AUDIT.md section 15)
 
 
 def extract_plan(text):
@@ -139,13 +139,13 @@ def check_and_build(plan, root, engine, today):
 
 
 def fallback(root, today):
-    """The playbook default: top-ranked open N, shrink-capped below GA_MIN_N, ga above, 600 s, one seed."""
+    """The playbook default: top-ranked open N, shrink-capped below GA_MIN_N, ga-seeded above, 600 s, one seed."""
     m = plan_digest.machine(root)
     slots = int(m["budget_hours"] * 3600 * m["workers"] // 600)
     rows = plan_digest.rank(root, plan_digest.load_ledger(root), dt.datetime.now(dt.timezone.utc))
     stamp = int(today.strftime("%Y%m%d"))
     jobs = [{"N": r["N"], "time": 600, "tag": "fallback", "seeds": [stamp * 10],
-             "schedule": "schedules/ga.json" if r["N"] >= GA_MIN_N else "schedules/shrink-capped.json"}
+             "schedule": "schedules/ga-seeded.json" if r["N"] >= GA_MIN_N else "schedules/shrink-capped.json"}
             for r in rows[:max(1, slots)]]
     return {"defaults": {"start": "best"}, "jobs": jobs}
 
