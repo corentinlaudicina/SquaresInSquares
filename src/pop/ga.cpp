@@ -324,11 +324,24 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
                     taken[static_cast<size_t>(i)] = 1;
                     cand[static_cast<size_t>(i)].explorer = false;
                 }
+                // An explorer must be a different basin from everything already chosen: the cheapest
+                // large-move children are the ones that relaxed back into the champion, and a real
+                // new structure always costs more in the same box.
+                const DiversityParams& dv = c.diversity;
+                const auto far_from_chosen = [&](int i) {
+                    const Packing& a = cp[static_cast<size_t>(i)];
+                    const bool assign = dv.metric == Metric::Assign || (dv.metric == Metric::Auto && static_cast<int>(a.xyt.size() / 3) <= dv.assign_max_n);
+                    for (const int j : chosen) {
+                        const Packing& b = cp[static_cast<size_t>(j)];
+                        if (assign ? assign_distance(a, b) <= dv.threshold : hist_distance(a, b) <= dv.hist_threshold) return false;
+                    }
+                    return true;
+                };
                 int added = 0;
                 for (const int i : corder) {
                     Individual& x = cand[static_cast<size_t>(i)];
                     if (added < E && !taken[static_cast<size_t>(i)] &&
-                        ((x.move >= 0 && is_large_move(x.move)) || (x.explorer && x.age < c.explorer_age))) {
+                        ((x.move >= 0 && is_large_move(x.move)) || (x.explorer && x.age < c.explorer_age)) && far_from_chosen(i)) {
                         x.explorer = true;
                         chosen.push_back(i);
                         taken[static_cast<size_t>(i)] = 1;
