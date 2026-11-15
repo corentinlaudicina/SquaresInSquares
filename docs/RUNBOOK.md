@@ -58,6 +58,14 @@ cp queue.example.yaml queue.yaml    # edit
 - GA schedules use `ga.threads` relaxation threads each: keep `workers x threads` near the core count.
 - One-off import of the legacy records: `.venv/bin/python tools/runner.py --import-legacy`.
 
+## The search machine (planner)
+```sh
+tools/setup_machine.sh --schedule   # once: build, test, best/, planner/, daily 07:00 job
+claude                              # once: log the CLI in
+tools/daily.sh                      # a cycle by hand: digest -> plan -> check -> runner until 06:40
+```
+Only N marked `open` in `data/known_optima_1_1000.csv` are ever queued. Details: `docs/PLANNER.md`.
+
 ## Benchmark
 ```sh
 python3 tools/benchmark.py --schedules schedules/shrink-baseline.json schedules/new.json \

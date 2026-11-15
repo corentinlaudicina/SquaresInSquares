@@ -1,6 +1,7 @@
 // engine --N <n> --seed <s> (--time <sec> | --kicks <k>) --out <file.json> [--schedule <file.json>]
 //        [--start <file>] [--telemetry <file>] [--neighbors <dir>] [--mode shrink|cycle|ga]   (--mode only without --schedule)
 //        engine --list-schedule-keys
+//        engine --check-schedule <file.json>
 //        engine --legalize <in> --out <out.json>
 //
 // Runs one search, legalizes its best packing (legalize.hpp) and writes it as sqpack/1, plus a
@@ -61,6 +62,17 @@ int main(int argc, char** argv) {
     std::string out, schedule, start, telemetry, mode = "shrink", legalize_only, neighbors = "best";
     for (int k = 1; k < argc; ++k) {
         const std::string a = argv[k];
+        if (a == "--check-schedule") {  // parse only: exit 0 if the engine accepts the file, 2 if not
+            if (k + 1 >= argc) usage("--check-schedule needs a file");
+            std::string why;
+            const auto ps = load_schedule(argv[k + 1], &why);
+            if (!ps) {
+                std::fprintf(stderr, "%s\n", why.c_str());
+                return 2;
+            }
+            std::printf("%s %s\n", ps->name.c_str(), ps->hash.c_str());
+            return 0;
+        }
         if (a == "--list-schedule-keys") {
             for (const std::string& f : field_names()) std::printf("%s\n", f.c_str());
             return 0;

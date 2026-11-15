@@ -12,7 +12,8 @@ Queue (YAML, or JSON with a .json name):
       - {N: [200, 300], seeds: 4, kicks: 50}       # seeds: list, or a count (1..k)
 
 Job fields: N (int, list, or "a-b"), seeds, schedule (.json or .yaml), time (wall seconds), kicks
-(optional count budget, for reproducible runs), start (best | seed | <path>).
+(optional count budget, for reproducible runs), start (best | seed | <path>), tag (free text, copied
+into the ledger: the planner tags exploit / explore / hypothesis jobs).
 
 Each job has a deterministic id from its spec (N, seed, schedule content, budget, start) and runs in
 runs/jobs/<id>/. Every finished job appends one line to runs/ledger.jsonl (what the planner reads, and
@@ -77,7 +78,7 @@ def expand(queue, root):
     jobs = []
     for spec in queue.get("jobs") or []:
         spec = {**defaults, **spec}
-        unknown = set(spec) - {"N", "seeds", "schedule", "time", "kicks", "start"}
+        unknown = set(spec) - {"N", "seeds", "schedule", "time", "kicks", "start", "tag"}
         if unknown:
             raise ValueError(f"unknown job keys {sorted(unknown)}")
         if "schedule" not in spec:
@@ -89,10 +90,12 @@ def expand(queue, root):
         for n in expand_n(spec["N"]):
             for seed in seeds:
                 key = json.dumps({"N": n, "seed": seed, "schedule": sched_text, "time": spec["time"],
-                                  "kicks": spec.get("kicks"), "start": spec["start"]}, sort_keys=True)
+                                  "kicks": spec.get("kicks"), "start": spec["start"], "tag": spec.get("tag")},
+                                 sort_keys=True)
                 jid = f"n{n:04d}_s{seed}_{sched.get('name', 'unnamed')}_{hashlib.sha256(key.encode()).hexdigest()[:10]}"
                 jobs.append({"id": jid, "N": n, "seed": seed, "schedule": sched, "schedule_file": str(spec["schedule"]),
-                             "time": float(spec["time"]), "kicks": spec.get("kicks"), "start": spec["start"]})
+                             "time": float(spec["time"]), "kicks": spec.get("kicks"), "start": spec["start"],
+                             "tag": spec.get("tag")})
     return jobs
 
 
@@ -162,8 +165,10 @@ class Store:
 
 
 class Runner:
-    def __init__(self, root, engine, workers):
+    def __init__(self, root, engine, workers, until=None):
         self.root, self.engine, self.workers = root, engine, workers
+        self.until = until  # epoch seconds: no job starts after it (it stays unfinished for the next queue)
+        self.skipped = 0
         self.runs = root / "runs"
         (self.runs / "jobs").mkdir(parents=True, exist_ok=True)
         self.store = Store(root)
@@ -200,7 +205,7 @@ class Runner:
             cmd += ["--kicks", str(job["kicks"])]
         # The engine checks the clock only between kicks, and legalization comes after: allow slack.
         timeout = job["time"] * 1.5 + 120
-        res = {"id": job["id"], "N": job["N"], "seed": job["seed"], "schedule": job["schedule_file"],
+        res = {"id": job["id"], "tag": job.get("tag"), "N": job["N"], "seed": job["seed"], "schedule": job["schedule_file"],
                "start": str(start), "started": now(), "cmd": cmd}
         with self.lock:
             self.running += 1
@@ -314,6 +319,9 @@ class Runner:
         def one(j):
             with self.lock:
                 self.pending -= 1
+                if self.until is not None and time.time() >= self.until:
+                    self.skipped += 1
+                    return {"id": j["id"], "status": "skipped_until"}
             r = self.run_job(j)
             print(f"  {r['status']:8s} {'VALID  ' if r.get('valid') else 'INVALID'} {r.get('stored') or '-':13s} "
                   f"{r.get('summary', '')[:150]}", flush=True)
@@ -324,7 +332,9 @@ class Runner:
         stop.set()
         self.touch()
         self.write_summary()
-        return results
+        if self.skipped:
+            print(f"runner: --until reached, {self.skipped} jobs not started")
+        return [r for r in results if r["status"] != "skipped_until"]
 
 
 def import_legacy(root, engine):
@@ -365,6 +375,19 @@ def import_legacy(root, engine):
     return res
 
 
+def parse_until(v):
+    """HH:MM -> the next such local time as epoch seconds; a number is taken as epoch seconds."""
+    if v is None:
+        return None
+    if ":" not in v:
+        return float(v)
+    hh, mm = (int(x) for x in v.split(":"))
+    t = dt.datetime.now().replace(hour=hh, minute=mm, second=0, microsecond=0)
+    if t <= dt.datetime.now():
+        t += dt.timedelta(days=1)
+    return t.timestamp()
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--queue", default="queue.yaml")
@@ -372,6 +395,7 @@ def main(argv=None):
     ap.add_argument("--root", default=str(Path(__file__).resolve().parent.parent))
     ap.add_argument("--engine", default=None, help="default: <root>/build/engine")
     ap.add_argument("--import-legacy", action="store_true")
+    ap.add_argument("--until", help="local time HH:MM (next occurrence) or epoch seconds: start no job after it")
     a = ap.parse_args(argv)
     root = Path(a.root).resolve()
     engine = Path(a.engine).resolve() if a.engine else root / "build" / "engine"
@@ -384,7 +408,7 @@ def main(argv=None):
         jobs = expand(load_structured(root / a.queue), root)
     except (OSError, ValueError) as e:
         sys.exit(f"runner: bad queue: {e}")
-    results = Runner(root, engine, a.workers).run(jobs)
+    results = Runner(root, engine, a.workers, parse_until(a.until)).run(jobs)
     return 0 if all(r["status"] == "ok" for r in results) else 1
 
 

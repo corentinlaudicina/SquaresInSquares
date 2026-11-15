@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Installed by tools/setup_machine.sh --schedule (@ROOT@ replaced by the repo path). -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>local.squares.planner</string>
+  <key>ProgramArguments</key>
+  <array><string>/bin/bash</string><string>@ROOT@/tools/daily.sh</string></array>
+  <key>WorkingDirectory</key><string>@ROOT@</string>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:@HOME@/.local/bin</string></dict>
+  <key>StandardOutPath</key><string>@ROOT@/planner/launchd.out</string>
+  <key>StandardErrorPath</key><string>@ROOT@/planner/launchd.err</string>
+</dict>
+</plist>

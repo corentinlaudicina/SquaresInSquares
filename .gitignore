@@ -37,3 +37,7 @@ queue.yaml
 
 # packings: kept on disk, synced outside git
 best/
+
+# planner live state (per machine) and its queue
+planner/
+queue.json

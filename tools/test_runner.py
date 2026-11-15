@@ -96,6 +96,15 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(len(ledger), 25)
         self.assertEqual(sum(r["kept"] == "recent" for r in ledger), 23)
 
+    def test_until_and_tag(self):
+        q = self.queue([{"N": 4, "seeds": [3], "tag": "H1"}])
+        r = runner.Runner(self.root, self.engine, 1, until=0.0)  # already past: nothing starts
+        self.assertEqual(r.run(runner.expand(runner.load_structured(self.root / q), self.root)), [])
+        rs = self.run_queue(q)  # no deadline: it runs, and the tag reaches the ledger
+        ledger = [json.loads(l) for l in (self.root / "runs" / "ledger.jsonl").read_text().splitlines()]
+        self.assertEqual([x["tag"] for x in ledger], ["H1"])
+        self.assertIsNotNone(runner.parse_until("06:40"))
+
     def test_invalid_never_reaches_best(self):
         rs = self.run_queue(self.queue([{"N": 4, "seeds": [7]}]))
         self.assertFalse(rs[0]["valid"])

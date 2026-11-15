@@ -82,7 +82,7 @@ check: test
 	./$(BUILD)/test_pop
 	./$(BUILD)/test_ga
 	./$(BUILD)/test_symmetric
-	python3 -m unittest tools/test_validate.py tools/test_runner.py tools/test_benchmark.py tools/test_engine.py
+	python3 -m unittest tools/test_validate.py tools/test_runner.py tools/test_benchmark.py tools/test_engine.py tools/test_planner.py
 
 $(OBJ)/%.o: %.cpp
 	@mkdir -p $(dir $@)
