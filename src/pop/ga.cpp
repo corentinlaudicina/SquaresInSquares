@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cmath>
 #include <limits>
+#include <map>
 #include <numeric>
 
 namespace pack {
@@ -20,7 +21,25 @@ struct Individual {
     Packing p;
     CostInfo info;
     int move = -1;  // the move that made it; -1 = carried over from an earlier generation
+    long age = 0;   // generations survived
+    bool explorer = false;  // held in an explorer slot (GAConfig::explorers)
 };
+
+// The best share `frac` of `idx` (sorted by cost), overall or, with `stratify`, within each move type.
+std::vector<int> keep_share(const std::vector<Individual>& v, std::vector<int> idx, double frac, bool stratify) {
+    std::stable_sort(idx.begin(), idx.end(), [&](int a, int b) { return v[static_cast<size_t>(a)].info.cost < v[static_cast<size_t>(b)].info.cost; });
+    const auto share = [&](size_t n) { return static_cast<size_t>(std::clamp<long>(std::lround(frac * static_cast<double>(n)), 1, static_cast<long>(n))); };
+    if (!stratify) {
+        idx.resize(share(idx.size()));
+        return idx;
+    }
+    std::map<int, std::vector<int>> by;
+    for (const int i : idx) by[v[static_cast<size_t>(i)].move].push_back(i);
+    std::vector<int> out;
+    for (auto& [m, list] : by) out.insert(out.end(), list.begin(), list.begin() + static_cast<long>(share(list.size())));
+    std::stable_sort(out.begin(), out.end(), [&](int a, int b) { return v[static_cast<size_t>(a)].info.cost < v[static_cast<size_t>(b)].info.cost; });
+    return out;
+}
 
 CappedParams rough_params(const GAConfig& c) {
     CappedParams p;
@@ -79,6 +98,7 @@ struct Island {
     double fit_h = 0.0;   // adaptive ratchet: the box this island last fitted in (or its source's side)
     double eps = 0.0;     // adaptive ratchet: the current relative step below fit_h
     long since_adjust = 0, loosened = 0;
+    const System* source = nullptr;  // the structure it was seeded from (island.reset_from_source)
 };
 
 void sort_pop(std::vector<Individual>& pop) {
@@ -182,6 +202,7 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
             // a generation from a much worse lattice would spend the budget getting back here.
             const size_t src = static_cast<size_t>(i) % sources.size();
             island_source[static_cast<size_t>(i)] = source_names[src];
+            isl[static_cast<size_t>(i)].source = sources[src];
             seed_island(isl[static_cast<size_t>(i)], {sources[src]}, std::min(sources[src]->L, out.best_side * 1.05) * (1.0 - c.ratchet_shrink), c, rng, be, L);
         } else {
             // out.best.L, not out.best_side: the same once anything is legal, but finite when nothing is
@@ -263,19 +284,23 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
                 be.cost_batch(batch, rough_params(c).penalty, raw, &L);
                 for (size_t i = 0; i < kids.size(); ++i) kids[i].info = raw[i];
             }
-            std::vector<int> order = by_cost(kids);
-            order.resize(static_cast<size_t>(std::clamp<long>(std::lround(c.prefilter * lambda), 1, lambda)));
+            std::vector<int> order = keep_share(kids, by_cost(kids), c.prefilter, c.stratify);
             lap(t, 1);
 
             // 3. relax: rough for the pre-filtered, fine for the best of those
-            relax_all(kids, order, rough_params(c), be, L);
+            if (c.large_relax > 1.0) {  // large-move children get a longer rough relaxation
+                std::vector<int> big, rest;
+                for (const int i : order) (is_large_move(kids[static_cast<size_t>(i)].move) ? big : rest).push_back(i);
+                CappedParams rp = rough_params(c);
+                relax_all(kids, rest, rp, be, L);
+                for (RelaxStage& s : rp.stages) s.iters = static_cast<int>(s.iters * c.large_relax);
+                relax_all(kids, big, rp, be, L);
+            } else {
+                relax_all(kids, order, rough_params(c), be, L);
+            }
             for (const int i : order) ++relaxed[static_cast<size_t>(kids[static_cast<size_t>(i)].move)];
             lap(t, 2);
-            std::stable_sort(order.begin(), order.end(), [&](int x, int y) {
-                return kids[static_cast<size_t>(x)].info.cost < kids[static_cast<size_t>(y)].info.cost;
-            });
-            order.resize(static_cast<size_t>(std::clamp<long>(std::lround(c.fine_frac * static_cast<double>(order.size())), 1,
-                                                              static_cast<long>(order.size()))));
+            order = keep_share(kids, order, c.fine_frac, c.stratify);
             relax_all(kids, order, fine_params(c), be, L);
             lap(t, 3);
 
@@ -289,7 +314,37 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
             for (const Individual& x : cand) cp.push_back(expanded(x.p, L));  // distances on full packings
             ParallelFor parfor;
             if (be.threads() > 1) parfor = [&be](int n, const std::function<void(int, int)>& f) { be.parallel_for(n, f); };
-            const std::vector<int> chosen = select_diverse(cp, corder, c.population, c.diversity, &distance_evals, parfor);
+            const int E = std::clamp(c.explorers, 0, std::max(0, c.population - 1));
+            std::vector<int> chosen = select_diverse(cp, corder, c.population - E, c.diversity, &distance_evals, parfor);
+            if (E > 0) {
+                // Explorer slots: the best large-move children and explorers still young enough, then
+                // anything left by cost. They survive although the elite scores better.
+                std::vector<char> taken(cand.size(), 0);
+                for (const int i : chosen) {
+                    taken[static_cast<size_t>(i)] = 1;
+                    cand[static_cast<size_t>(i)].explorer = false;
+                }
+                int added = 0;
+                for (const int i : corder) {
+                    Individual& x = cand[static_cast<size_t>(i)];
+                    if (added < E && !taken[static_cast<size_t>(i)] &&
+                        ((x.move >= 0 && is_large_move(x.move)) || (x.explorer && x.age < c.explorer_age))) {
+                        x.explorer = true;
+                        chosen.push_back(i);
+                        taken[static_cast<size_t>(i)] = 1;
+                        ++added;
+                    }
+                }
+                for (const int i : corder) {
+                    if (static_cast<int>(chosen.size()) >= c.population) break;
+                    if (!taken[static_cast<size_t>(i)]) {
+                        cand[static_cast<size_t>(i)].explorer = false;
+                        chosen.push_back(i);
+                        taken[static_cast<size_t>(i)] = 1;
+                    }
+                }
+            }
+            for (Individual& x : cand) ++x.age;
             pop.clear();
             std::array<long, kGaMoves> surv_gen{};
             for (const int i : chosen) {
@@ -346,7 +401,10 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
             } else {
                 is.longest_stall = std::max(is.longest_stall, ++is.since_progress);
                 if (c.island_patience > 0 && is.since_progress >= c.island_patience) {
-                    seed_island(is, {&out.best}, out.best.L * (1.0 - c.ratchet_shrink), c, rng, be, L);
+                    if (c.island_reset_source && is.source)
+                        seed_island(is, {is.source}, std::min(is.source->L, out.best_side * 1.05) * (1.0 - c.ratchet_shrink), c, rng, be, L);
+                    else
+                        seed_island(is, {&out.best}, out.best.L * (1.0 - c.ratchet_shrink), c, rng, be, L);
                     ++is.resets;
                     reset = true;
                 }
@@ -380,8 +438,18 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
                 const Packing champ = expanded(is.pop.front().p, L);
                 json sq = json::array();
                 for (size_t q = 0; q < champ.xyt.size(); q += 3) sq.push_back({champ.xyt[q], champ.xyt[q + 1], champ.xyt[q + 2]});
-                isls.push_back({{"source", island_source[k]}, {"h", is.h}, {"eps", is.eps}, {"ratchets", is.ratchets},
-                                {"cost", is.pop.front().info.cost}, {"depth", is.pop.front().info.max_depth}, {"squares", sq}});
+                json e = {{"source", island_source[k]}, {"h", is.h}, {"eps", is.eps}, {"ratchets", is.ratchets},
+                          {"cost", is.pop.front().info.cost}, {"depth", is.pop.front().info.max_depth}, {"squares", sq}};
+                const Individual* ex = nullptr;  // the island's best explorer, if any
+                for (const Individual& x : is.pop)
+                    if (x.explorer && (!ex || x.info.cost < ex->info.cost)) ex = &x;
+                if (ex) {
+                    const Packing ep = expanded(ex->p, L);
+                    json es = json::array();
+                    for (size_t q = 0; q < ep.xyt.size(); q += 3) es.push_back({ep.xyt[q], ep.xyt[q + 1], ep.xyt[q + 2]});
+                    e["explorer"] = {{"cost", ex->info.cost}, {"age", ex->age}, {"squares", es}};
+                }
+                isls.push_back(e);
             }
             snap["islands"] = isls;
             live(snap);

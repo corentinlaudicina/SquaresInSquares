@@ -44,6 +44,9 @@ const char* ga_move_name(GaMove m) {
         case GaMove::Twist: return "twist";
         case GaMove::Translate: return "translate";
         case GaMove::Crossover: return "crossover";
+        case GaMove::Destroy: return "destroy";
+        case GaMove::Strip: return "strip";
+        case GaMove::Corner: return "corner";
         case GaMove::Count: break;
     }
     return "?";
@@ -159,6 +162,87 @@ void apply_move(Packing& child, GaMove m, const MoveParams& prm, std::mt19937_64
                 X(child, dst) = X(b, src);
                 Y(child, dst) = Y(b, src);
                 T(child, dst) = T(b, src);
+            }
+            return;
+        }
+        case GaMove::Destroy: {
+            // Scramble a disc: every square in it gets a random pose inside the disc (half of them at a
+            // multiple of 45 degrees). The relaxation rebuilds the region from scratch.
+            const double r = uniform(rng, prm.destroy_min, std::max(prm.destroy_min, prm.destroy_frac * h));
+            const double cx = uniform(rng, 0.0, h), cy = uniform(rng, 0.0, h);
+            const std::vector<int> idx = within(child, cx, cy, r);
+            if (idx.size() < 2) {
+                jiggle(child, uniform_int(rng, 0, n - 1), prm.jiggle_large, rng);
+                return;
+            }
+            for (const int i : idx) {
+                double x, y;
+                do {
+                    x = cx + uniform(rng, -r, r);
+                    y = cy + uniform(rng, -r, r);
+                } while ((x - cx) * (x - cx) + (y - cy) * (y - cy) > r * r);
+                X(child, i) = std::clamp(x, 0.5, h - 0.5);
+                Y(child, i) = std::clamp(y, 0.5, h - 0.5);
+                T(child, i) = u01(rng) < prm.snap_prob ? 0.25 * kPi * uniform_int(rng, 0, 1) : uniform(rng, 0.0, 0.5 * kPi);
+            }
+            return;
+        }
+        case GaMove::Strip: {
+            // Re-lay a band as a regular strip: direction 0, 90, 45 or 135 degrees, width 1..strip_width
+            // rows; each row's squares at unit pitch along the band, turned to the band's angle.
+            const double phi = 0.25 * kPi * uniform_int(rng, 0, 3);
+            const double ux = std::cos(phi), uy = std::sin(phi), vx = -uy, vy = ux;
+            const int w = uniform_int(rng, 1, std::max(1, prm.strip_width));
+            const double px = uniform(rng, 0.0, h), py = uniform(rng, 0.0, h);
+            std::vector<std::vector<std::pair<double, int>>> rows(static_cast<size_t>(w));
+            for (int i = 0; i < n; ++i) {
+                const double dx = X(child, i) - px, dy = Y(child, i) - py;
+                const double b = dx * vx + dy * vy + 0.5 * w;
+                if (b < 0.0 || b >= w) continue;
+                rows[static_cast<size_t>(b)].push_back({dx * ux + dy * uy, i});
+            }
+            int moved = 0;
+            for (int row = 0; row < w; ++row) {
+                auto& r = rows[static_cast<size_t>(row)];
+                if (r.empty()) continue;
+                std::sort(r.begin(), r.end());
+                const double mean = [&] { double s = 0; for (auto& e : r) s += e.first; return s / r.size(); }();
+                const double a0 = std::round(mean - 0.5 * (r.size() - 1));
+                const double off = row - 0.5 * (w - 1);
+                for (size_t k = 0; k < r.size(); ++k) {
+                    const double a = a0 + static_cast<double>(k);
+                    const int i = r[k].second;
+                    X(child, i) = std::clamp(px + a * ux + off * vx, 0.5, h - 0.5);
+                    Y(child, i) = std::clamp(py + a * uy + off * vy, 0.5, h - 0.5);
+                    T(child, i) = phi;
+                    ++moved;
+                }
+            }
+            if (moved < 2) jiggle(child, uniform_int(rng, 0, n - 1), prm.jiggle_large, rng);
+            return;
+        }
+        case GaMove::Corner: {
+            // Re-lay a corner block as an axis-aligned grid packed into that corner, nearest squares first.
+            const int k = uniform_int(rng, 0, 3);
+            const double d = uniform(rng, 2.0, std::max(2.0, prm.corner_frac * h));
+            const double ox = (k == 1 || k == 2) ? h : 0.0, oy = (k >= 2) ? h : 0.0;
+            const double sx = ox == 0.0 ? 1.0 : -1.0, sy = oy == 0.0 ? 1.0 : -1.0;
+            std::vector<std::pair<double, int>> m;
+            for (int i = 0; i < n; ++i) {
+                const double dx = (X(child, i) - ox) * sx, dy = (Y(child, i) - oy) * sy;
+                if (dx <= d && dy <= d) m.push_back({dx * dx + dy * dy, i});
+            }
+            if (m.size() < 2) {
+                jiggle(child, uniform_int(rng, 0, n - 1), prm.jiggle_large, rng);
+                return;
+            }
+            std::sort(m.begin(), m.end());
+            const int cols = std::max(1, static_cast<int>(std::floor(d)));
+            for (size_t q = 0; q < m.size(); ++q) {  // fill the block's diagonals outwards from the corner
+                const int a = static_cast<int>(q) % cols, b = static_cast<int>(q) / cols;
+                X(child, m[q].second) = ox + sx * (0.5 + a);
+                Y(child, m[q].second) = oy + sy * (0.5 + b);
+                T(child, m[q].second) = 0.0;
             }
             return;
         }

@@ -196,6 +196,33 @@ void test_adaptive_ratchet_polishes() {
     assert(strict_report(adapt.best).ok());
 }
 
+void test_explorers_and_large_moves() {
+    // Large moves on, stratified filters, 2 explorer slots: explorers must appear in the live snapshots.
+    const System start = grid_start(30);
+    GAConfig cfg;
+    cfg.population = 6;
+    cfg.offspring = 24;
+    cfg.threads = 2;
+    cfg.islands = 2;
+    cfg.moves.weight[7] = cfg.moves.weight[8] = cfg.moves.weight[9] = 0.2;
+    cfg.stratify = true;
+    cfg.large_relax = 3.0;
+    cfg.explorers = 2;
+    cfg.island_reset_source = true;
+    cfg.island_patience = 3;
+    long snaps = 0, with_explorer = 0;
+    const GAOutcome out = run_ga(start, cfg, 11, 0.0, 12, {}, [&](const nlohmann::json& s) {
+        ++snaps;
+        for (const auto& is : s["islands"]) with_explorer += is.contains("explorer");
+    });
+    assert(strict_report(out.best).ok() && with_explorer > 0);
+    assert(out.telemetry["ga"]["moves"]["destroy"]["produced"].get<long>() > 0);
+    assert(out.telemetry["ga"]["moves"]["strip"]["produced"].get<long>() > 0);
+    assert(out.telemetry["ga"]["moves"]["corner"]["produced"].get<long>() > 0);
+    std::printf("  large moves + explorers: %ld snapshots, %ld island views with an explorer, legal side %.6f\n",
+                snaps, with_explorer, out.best_side);
+}
+
 }  // namespace
 
 int main() {
@@ -207,5 +234,6 @@ int main() {
     test_islands();
     test_seeding();
     test_adaptive_ratchet_polishes();
+    test_explorers_and_large_moves();
     std::printf("ga: all tests passed\n");
 }

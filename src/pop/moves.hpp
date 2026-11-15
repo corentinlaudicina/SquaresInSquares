@@ -22,12 +22,17 @@ inline int uniform_int(std::mt19937_64& rng, int lo, int hi) {  // inclusive; ti
 }
 double normal(std::mt19937_64& rng);  // standard normal, Box-Muller
 
-enum class GaMove { Relocate, JiggleSmall, JiggleLarge, Cluster, Twist, Translate, Crossover, Count };
+// Destroy, Strip and Corner are the large moves (whole regions rebuilt); is_large_move() tells them apart.
+enum class GaMove { Relocate, JiggleSmall, JiggleLarge, Cluster, Twist, Translate, Crossover, Destroy, Strip, Corner, Count };
+inline bool is_large_move(int m) {
+    return m == static_cast<int>(GaMove::Destroy) || m == static_cast<int>(GaMove::Strip) || m == static_cast<int>(GaMove::Corner);
+}
 inline constexpr int kGaMoves = static_cast<int>(GaMove::Count);
 const char* ga_move_name(GaMove m);
 
 struct MoveParams {
-    std::array<double, kGaMoves> weight = {0.10, 0.25, 0.15, 0.15, 0.10, 0.10, 0.15};
+    // The large moves weigh 0 by default, so schedules written before them draw exactly as before.
+    std::array<double, kGaMoves> weight = {0.10, 0.25, 0.15, 0.15, 0.10, 0.10, 0.15, 0.0, 0.0, 0.0};
     double snap_prob = 0.5;        // relocate: chance the new angle is a multiple of 45 degrees
     double jiggle_small = 0.02;    // sigma of the position (length) and angle (radians) noise
     double jiggle_large = 0.15;
@@ -39,6 +44,10 @@ struct MoveParams {
     double translate_sigma = 0.15;
     double crossover_radius = 2.5;
     double crossover_symmetry = 0.5;  // chance the mate is first mapped by a random D4 element
+    double destroy_min = 1.5;         // destroy: disc radius from destroy_min up to destroy_frac * side
+    double destroy_frac = 0.12;
+    int strip_width = 3;              // strip: band width, 1..strip_width squares
+    double corner_frac = 0.2;         // corner: block depth from 2 up to corner_frac * side
 };
 
 GaMove draw_move(const MoveParams& prm, std::mt19937_64& rng);

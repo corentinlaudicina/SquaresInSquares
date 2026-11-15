@@ -35,6 +35,9 @@ build/engine --legalize <in.cfg|json> --out out.json   # legalize only, no searc
 | `ga-div` | ga | `ga` with diversity selection (item 5, failed: for tuning only) |
 | `ga-islands` | ga | 4 islands on a ring, with diversity (item 6, inconclusive) |
 | `ga-c2`, `ga-c4` | ga | symmetric genotypes (item 8, failed); C4 only for N mod 4 in {0, 1} |
+| `ga-seeded-adapt` | ga | production since 2026-11-15: ga-seeded + adaptive ratchet |
+| `ga-explore` | ga | ga-seeded-adapt + large moves (destroy, strip, corner), explorer slots, resets from own source |
+| `shrink-polish` | shrink | shrink-capped without the mirrored start |
 
 The GA is explained in the headers of `src/pop/ga.hpp` (loop, ratchet, islands, seeding),
 `src/pop/moves.hpp`, `src/pop/diversity.hpp` and `src/pop/symmetric.hpp`. The mirror start

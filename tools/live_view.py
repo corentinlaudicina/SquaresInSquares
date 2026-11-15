@@ -5,7 +5,9 @@
     src/viz/.venv/bin/python tools/live_view.py <job-id | file>  # one job: its best and every island champion
 
 The runner passes --live runs/jobs/<id>/live.json to every job. Squares are coloured by tilt (0 degrees
-blue, 45 degrees orange); the box is the packing's side. A panel title gives N, the side and its change
+blue, 45 degrees orange); the box is the packing's side. In the one-job view, island champions and
+explorers are coloured by distance from the best (grey = the same square, red = moved), and squares
+that moved since the previous snapshot are outlined in black. A panel title gives N, the side and its change
 since the job started, the generation and elapsed time. Close the window to stop.
 """
 import json
@@ -21,6 +23,8 @@ ROOT = Path(__file__).resolve().parent.parent
 JOBS = ROOT / "runs" / "jobs"
 FRESH = 30.0  # a snapshot older than this belongs to a job that is no longer running
 CMAP = plt.get_cmap("coolwarm")
+DIFF = plt.get_cmap("Reds")
+PREV = {}  # (job, panel) -> squares at the previous snapshot, to outline what moved since
 
 
 def corners(x, y, t):
@@ -33,11 +37,36 @@ def tilt(t):  # 0 for axis-aligned, 1 for 45 degrees
     return min(a, 90.0 - a) / 45.0
 
 
-def draw(ax, squares, side, title):
+def displacement(a, b):
+    """For each square of a, the distance to the nearest centre in b (grid lookup, O(N))."""
+    cell = {}
+    for x, y, _ in b:
+        cell.setdefault((int(x), int(y)), []).append((x, y))
+    out = []
+    for x, y, _ in a:
+        c = [p for dx in (-1, 0, 1) for dy in (-1, 0, 1) for p in cell.get((int(x) + dx, int(y) + dy), [])]
+        out.append(min(math.dist((x, y), p) for p in c) if c else 1.0)
+    return out
+
+
+def draw(ax, squares, side, title, ref=None, key=None):
+    """Tilt colours; with `ref`, colour by distance from ref (grey = same, red = moved) and outline the
+    squares that moved since this panel's previous snapshot."""
     ax.clear()
     polys = [corners(*q) for q in squares]
-    ax.add_collection(PolyCollection(polys, facecolors=[CMAP(0.15 + 0.7 * tilt(q[2])) for q in squares],
-                                     edgecolors="#333333", linewidths=0.3))
+    if ref is None:
+        faces = [CMAP(0.15 + 0.7 * tilt(q[2])) for q in squares]
+    else:
+        faces = [("#d9d9d6" if d < 0.02 else DIFF(0.3 + 0.7 * min(1.0, d / 0.6))) for d in displacement(squares, ref)]
+    edges, widths = "#333333", 0.3
+    if key is not None:
+        prev = PREV.get(key)
+        if prev is not None and len(prev) == len(squares):
+            moved = [math.dist(q[:2], p[:2]) > 0.01 or abs(q[2] - p[2]) > 0.01 for q, p in zip(squares, prev)]
+            edges = ["black" if m else "#333333" for m in moved]
+            widths = [1.4 if m else 0.3 for m in moved]
+        PREV[key] = squares
+    ax.add_collection(PolyCollection(polys, facecolors=faces, edgecolors=edges, linewidths=widths))
     ax.add_patch(plt.Rectangle((0, 0), side, side, fill=False, edgecolor="black", linewidth=1.0))
     pad = 0.02 * side
     ax.set_xlim(-pad, side + pad)
@@ -62,9 +91,13 @@ def running():
 
 def job_title(name, s):
     d = s["best"]["side"] - s["start_side"]
+    isl = s.get("islands", [])
+    differ = sum(sum(x > 0.05 for x in displacement(i["squares"], s["best"]["squares"])) > 5 for i in isl)
+    expl = sum("explorer" in i for i in isl)
     return (f"N={s['n']}  {name.split('_')[2] if name.count('_') >= 3 else name}\n"
             f"side {s['best']['side']:.9f} ({d:+.2e} since start)\n"
-            f"generation {s['generation']}, {s['t']:.0f} s")
+            f"generation {s['generation']}, {s['t']:.0f} s"
+            + (f"\nislands differing from the best: {differ}/{len(isl)}, explorers {expl}" if isl else ""))
 
 
 def view_all(fig):
@@ -87,15 +120,19 @@ def view_one(fig, p):
     fig.clf()
     if not s:
         return
-    panels = [("best (legal)", s["best"]["squares"], s["best"]["side"], "")] + [
-        (f"island {k}: {i['source']}", i["squares"], i["h"],
-         f"h {i['h']:.6f}, step {i['eps']:.0e}, ratchets {i['ratchets']}\npenalty {i['cost']:.1e}, depth {i['depth']:.1e}")
-        for k, i in enumerate(s.get("islands", []))]
-    cols = min(len(panels), 4)
+    best = s["best"]["squares"]
+    panels = [("best", best, s["best"]["side"], job_title(p.parent.name, s), None)]
+    for k, i in enumerate(s.get("islands", [])):
+        panels.append((f"isl{k}", i["squares"], i["h"],
+                       f"island {k}: {i['source']}  (champion)\nh {i['h']:.6f}, step {i['eps']:.0e}, ratchets {i['ratchets']}\n"
+                       f"penalty {i['cost']:.1e}, depth {i['depth']:.1e}", best))
+        if "explorer" in i:
+            e = i["explorer"]
+            panels.append((f"exp{k}", e["squares"], i["h"], f"island {k}: explorer, age {e['age']}\npenalty {e['cost']:.1e}", best))
+    cols = min(len(panels), 5)
     rows = math.ceil(len(panels) / cols)
-    for k, (name, sq, side, extra) in enumerate(panels):
-        title = (job_title(p.parent.name, s) if k == 0 else name + "\n" + extra)
-        draw(fig.add_subplot(rows, cols, k + 1), sq, side, title)
+    for k, (key, sq, side, title, ref) in enumerate(panels):
+        draw(fig.add_subplot(rows, cols, k + 1), sq, side, title, ref=ref, key=(p.parent.name, key))
 
 
 def main():

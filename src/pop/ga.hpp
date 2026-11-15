@@ -72,6 +72,14 @@ struct GAConfig {
     // mixes all sources in the start's box. All off by default.
     SeedParams seeding;
 
+    // Exploration (all off by default: the gated GA is unchanged).
+    bool stratify = false;        // pre-filter and fine-filter keep their share within each move type, so
+                                  // large moves (huge unrelaxed penalty) are not always discarded first
+    double large_relax = 1.0;     // rough-relaxation budget multiplier for large-move children
+    int explorers = 0;            // population slots per island kept for large-move children and their
+    long explorer_age = 30;       // descendants younger than this, even when they score worse than the elite
+    bool island_reset_source = false;  // a stalled island restarts from its own seed source, not the record
+
     // Symmetric genotypes (item 8): 0 = none, 1 = C2 (180 deg), 2 = C4 (90 deg, needs N mod 4 in {0,1};
     // otherwise the run falls back to none and says so in telemetry). Individuals are then generators.
     int symmetry = 0;
