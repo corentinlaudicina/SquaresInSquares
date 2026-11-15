@@ -69,14 +69,32 @@ class RunnerTest(unittest.TestCase):
         self.assertTrue(json.loads((self.root / "best" / "4.json").read_text())["meta"]["validated"])
         # a restart runs nothing; deleting one done-marker re-runs exactly that job
         self.assertEqual(self.run_queue(q), [])
-        done = sorted((self.root / "runs" / "jobs").glob("*/result.json"))
-        done[0].unlink()
+        ledger = self.root / "runs" / "ledger.jsonl"
+        lines = ledger.read_text().splitlines()
+        self.assertEqual(len(lines), 2)
+        ledger.write_text("\n".join(lines[1:]) + "\n{\"id\": \"cut sh")  # one job forgotten, a torn last line
         rs = self.run_queue(q)
         self.assertEqual(len(rs), 1)
         self.assertIsNone(rs[0]["stored"])  # no improvement: best/ untouched
         self.assertAlmostEqual(self.best_side(), 2.002)
         self.assertTrue((self.root / "runs" / "summary.md").exists())
         self.assertTrue((self.root / "runs" / "heartbeat").exists())
+
+    def test_retention(self):
+        # 25 jobs: 2.001 improves best (kept, full telemetry), seed 7 is invalid (kept), the other 23 change
+        # nothing; of those only the newest KEEP_RECENT folders survive. Every job is in the ledger.
+        rs = self.run_queue(self.queue([{"N": 4, "seeds": [1, 7] + list(range(10, 33))}]), workers=1)
+        self.assertEqual(len(rs), 25)
+        jobs = self.root / "runs" / "jobs"
+        kept = {d.name: (d / "keep").read_text().strip() for d in jobs.iterdir() if (d / "keep").exists()}
+        self.assertEqual(sorted(kept.values()), ["improvement", "non_validated"])
+        unmarked = [d for d in jobs.iterdir() if not (d / "keep").exists()]
+        self.assertEqual(len(unmarked), runner.KEEP_RECENT)
+        imp = next(d for d in jobs.iterdir() if kept.get(d.name) == "improvement")
+        self.assertTrue((imp / "out.json").exists() and (imp / "stdout.txt").exists())
+        ledger = [json.loads(l) for l in (self.root / "runs" / "ledger.jsonl").read_text().splitlines()]
+        self.assertEqual(len(ledger), 25)
+        self.assertEqual(sum(r["kept"] == "recent" for r in ledger), 23)
 
     def test_invalid_never_reaches_best(self):
         rs = self.run_queue(self.queue([{"N": 4, "seeds": [7]}]))

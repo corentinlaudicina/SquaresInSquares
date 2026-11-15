@@ -5,8 +5,8 @@
         [--set train|holdout|all] [--seeds 3] [--time 120] [--workers 4] [--targets targets.json] [--name tag]
 
 Every (N, seed) pair runs once per schedule, from the same start (best/N.json, else the seed file), so
-schedules are compared on identical inputs. Writes runs/bench/<name>/{results.jsonl, report.md}; never
-touches best/.
+schedules are compared on identical inputs. Writes runs/bench/<name>/{results.jsonl, report.md}; each
+run's packing and telemetry are deleted once scored unless --keep. Never touches best/.
 
 Per schedule:
   success   share of runs whose legal, validated side <= target * (1 + 1e-9)
@@ -39,6 +39,7 @@ HOLDOUT = [18, 28, 39, 48, 72, 120, 168, 300, 420, 1000]
 TOL = 1e-9
 
 
+KEEP = False   # --keep: keep every run's packing and telemetry
 STARTS = None  # --starts: a format string with {N}, e.g. runs/starts/recovery/n{N:04d}.json
 
 
@@ -89,6 +90,9 @@ def run_one(job, outdir, engine, budget):
         r["ttt"] = hit[0] if hit else None
         r["kicks"] = tel.get("budget", {}).get("kicks")
     r["success"] = bool(r["valid"] and r["side"] is not None and r["side"] <= target * (1 + TOL))
+    if not KEEP:  # results.jsonl holds what the report needs; the packings and telemetry go
+        out.unlink(missing_ok=True)
+        tel_path.unlink(missing_ok=True)
     return r
 
 
@@ -144,6 +148,7 @@ def main(argv=None):
     ap.add_argument("--time", type=float, default=120.0)
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) // 2))
     ap.add_argument("--targets", help="JSON {N: side}")
+    ap.add_argument("--keep", action="store_true", help="keep each run's packing and telemetry (default: results only)")
     ap.add_argument("--starts", help="start file pattern with {N} (default: best/N.json, else the seed file)")
     ap.add_argument("--name", default=time.strftime("%Y%m%d_%H%M%S"))
     ap.add_argument("--combine", nargs="+", metavar="NAME",
@@ -161,8 +166,9 @@ def main(argv=None):
         (out / "report.md").write_text(text)
         print(text)
         return 0
-    global STARTS
+    global STARTS, KEEP
     STARTS = a.starts
+    KEEP = a.keep
     engine = ROOT / "build" / "engine"
     if not engine.exists():
         sys.exit("benchmark: make engine first")

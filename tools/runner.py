@@ -14,9 +14,12 @@ Queue (YAML, or JSON with a .json name):
 Job fields: N (int, list, or "a-b"), seeds, schedule (.json or .yaml), time (wall seconds), kicks
 (optional count budget, for reproducible runs), start (best | seed | <path>).
 
-Each job has a deterministic id from its spec (N, seed, schedule content, budget, start), and lives in
-runs/jobs/<id>/. A job with a result.json is done and is skipped, so a restart re-runs exactly the
-unfinished jobs. Every output is checked by tools/validate.py (no engine code involved). Only this
+Each job has a deterministic id from its spec (N, seed, schedule content, budget, start) and runs in
+runs/jobs/<id>/. Every finished job appends one line to runs/ledger.jsonl (what the planner reads, and
+the done marker: a restart skips the ids it holds and re-runs the rest). Job folders are kept only
+when they matter -- an improvement of best/ (full telemetry), a non-validated improvement, or a
+failure (invalid, crash, timeout), each marked by a `keep` file -- plus the newest KEEP_RECENT others;
+older unmarked folders are deleted. Every output is checked by tools/validate.py (no engine code involved). Only this
 process writes best/ and non_validated_best/:
     best/N.json                 valid and strictly smaller side than what is there (atomic replace)
     non_validated_best/N.json   not valid, but smaller than both best/ and what is there
@@ -28,6 +31,7 @@ import fcntl
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -40,6 +44,7 @@ import convert  # noqa: E402
 import validate  # noqa: E402
 
 IMPROVE = 1e-12  # relative: a side must beat the incumbent by more than this to replace it
+KEEP_RECENT = 20  # unmarked job folders kept, newest first
 
 
 def now():
@@ -89,6 +94,25 @@ def expand(queue, root):
                 jobs.append({"id": jid, "N": n, "seed": seed, "schedule": sched, "schedule_file": str(spec["schedule"]),
                              "time": float(spec["time"]), "kicks": spec.get("kicks"), "start": spec["start"]})
     return jobs
+
+
+def digest(tel_path):
+    """The few telemetry fields the ledger keeps (the full file survives only for kept jobs)."""
+    try:
+        t = json.loads(Path(tel_path).read_text())
+    except (OSError, ValueError):
+        return {}
+    side, budget, run = t.get("side", {}), t.get("budget", {}), t.get("run", {})
+    out = {"schedule_name": run.get("schedule", {}).get("name"), "schedule_hash": run.get("schedule", {}).get("hash"),
+           "start_side": side.get("start"), "best_raw": side.get("best"), "t_best_s": side.get("t_best_s"),
+           "kicks": budget.get("kicks"), "stop": budget.get("stop")}
+    if "ga" in t:
+        g = t["ga"]
+        out["ga"] = {k: g.get(k) for k in ("generations", "ratchets", "legal_improvements", "resets") if k in g}
+        out["moves"] = {m: [v["produced"], v["survived"]] for m, v in g.get("moves", {}).items()}
+    elif "kicks" in t:
+        out["moves"] = {m: [v["tries"], v["impr"]] for m, v in t["kicks"].items()}
+    return out
 
 
 class Store:
@@ -205,12 +229,49 @@ class Runner:
         else:
             res.update(valid=False, side=None, stored=None)
         res["finished"] = now()
-        Store.atomic_write(d / "result.json", res)  # the done marker, written last
+        res.update(digest(d / "out.telemetry.json"))
+        keep = ("improvement" if res.get("stored") == "best" else
+                "non_validated" if res.get("stored") == "non_validated" else
+                "failure" if res["status"] != "ok" or not res.get("valid") else None)
+        res["kept"] = keep or "recent"
+        if keep:
+            (d / "keep").write_text(keep + "\n")
+        Store.atomic_write(d / "result.json", res)
+        self.append_ledger(res)  # the done marker, written last
         with self.lock:
             self.running -= 1
             self.results.append(res)
+            self.prune()
             self.write_summary()
         return res
+
+    def append_ledger(self, res):
+        line = json.dumps({k: v for k, v in res.items() if k != "cmd"}, separators=(",", ":")) + "\n"
+        with self.lock, open(self.runs / "ledger.jsonl", "a") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            f.write(line)
+            f.flush()
+            os.fsync(f.fileno())
+
+    def done_ids(self):
+        ids = set()
+        try:
+            for line in (self.runs / "ledger.jsonl").read_text().splitlines():
+                try:
+                    ids.add(json.loads(line)["id"])
+                except (ValueError, KeyError):
+                    pass  # a line cut short by a crash: that job simply runs again
+        except FileNotFoundError:
+            pass
+        return ids
+
+    def prune(self):
+        """Delete unmarked job folders beyond the newest KEEP_RECENT finished ones."""
+        recent = [d for d in (self.runs / "jobs").iterdir()
+                  if d.is_dir() and (d / "result.json").exists() and not (d / "keep").exists()]
+        recent.sort(key=lambda d: (d / "result.json").stat().st_mtime, reverse=True)
+        for d in recent[KEEP_RECENT:]:
+            shutil.rmtree(d, ignore_errors=True)
 
     def write_summary(self):
         done = self.results
@@ -241,7 +302,8 @@ class Runner:
         (self.runs / "heartbeat").write_text(f"{now()} running={self.running} pending={self.pending}\n")
 
     def run(self, jobs):
-        todo = [j for j in jobs if not (self.job_dir(j) / "result.json").exists()]
+        done = self.done_ids()
+        todo = [j for j in jobs if j["id"] not in done]
         print(f"runner: {len(jobs)} jobs, {len(jobs) - len(todo)} already done, {len(todo)} to run, "
               f"{self.workers} workers")
         self.pending = len(todo)

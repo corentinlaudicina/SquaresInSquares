@@ -48,9 +48,13 @@ cp queue.example.yaml queue.yaml    # edit
 - `best/N.json`: validated, legal packings only. The runner replaces one only on a strict improvement.
   Gitignored: sync it between machines outside git.
 - `non_validated_best/N.json`: smaller than `best/` but not valid. Kept for inspection, never trusted.
-- `runs/jobs/<id>/`: per-job schedule, output, telemetry, stdout, `result.json` (the done marker).
+- `runs/ledger.jsonl`: one line per finished job (sides, validity, where it was stored, stop reason,
+  per-move totals, summary line). What the planner reads, and the done marker.
+- `runs/jobs/<id>/`: schedule, output, full telemetry, stdout. Kept only for improvements of `best/`,
+  non-validated improvements and failures (each marked by a `keep` file with the reason), plus the
+  newest 20 other jobs; older unmarked folders are deleted.
 - `runs/summary.md`: short status for the planner. `runs/heartbeat`: touched every 30 s.
-- Restart-safe: rerunning the same queue skips done jobs and re-runs unfinished ones.
+- Restart-safe: rerunning the same queue skips the jobs in the ledger and re-runs unfinished ones.
 - GA schedules use `ga.threads` relaxation threads each: keep `workers x threads` near the core count.
 - One-off import of the legacy records: `.venv/bin/python tools/runner.py --import-legacy`.
 
@@ -64,6 +68,7 @@ python3 tools/benchmark.py --schedules schedules/shrink-baseline.json schedules/
 - **Starting from `best/` cannot show a search improving** (it returns the strong start). Use the
   recovery gate: `--starts 'runs/starts/recovery/n{N:04d}.json'` (legal, worse, different arrangements).
 - `--combine name1 name2 --schedules ...` merges earlier runs into one paired report (same N, seeds, budget).
+- Only `results.jsonl` and `report.md` are kept; `--keep` also keeps every run's packing and telemetry.
 - GA runs use several threads: run them with fewer `--workers` (e.g. 2 x 4 threads on 8 cores).
 
 ## Micro-benchmark
