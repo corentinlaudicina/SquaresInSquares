@@ -23,6 +23,12 @@ bool within(const CostInfo& c, double tol) { return c.max_depth <= tol && c.max_
 // returns the cost at x and writes its gradient with respect to x into g.
 template <class Raw>
 CappedStats relax_core(std::vector<double>& x, Raw raw, const CappedParams& prm, Workspace& ws) {
+    // The neighbour list is valid for one relaxation only: switched on here, off on every return.
+    struct VerletScope {
+        Workspace& w;
+        explicit VerletScope(Workspace& ws_) : w(ws_) { w.verlet = true; w.verlet_valid = false; }
+        ~VerletScope() { w.verlet = false; w.verlet_valid = false; }
+    } verlet_scope(ws);
     const size_t N3 = x.size();
     const size_t m = static_cast<size_t>(std::max(1, prm.history));
     ws.g.resize(N3);

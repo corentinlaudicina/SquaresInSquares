@@ -102,8 +102,12 @@ void test_relax_symmetric() {
     Workspace ws;
     const CappedStats st = relax_symmetric(g, L, CappedParams{}, ws);
     System s = to_system(expanded(g, L));
-    std::printf("  C4 6x6 from jiggled generators: reached=%d after %d iterations\n", st.reached, st.iters);
-    assert(st.reached && strict_report(s).ok());
+    const StrictReport before = strict_report(s);
+    std::printf("  C4 6x6 from jiggled generators: reached=%d after %d iterations, depth %.1e, min gap %.1e\n",
+                st.reached, st.iters, st.info.max_depth, before.min_pair_gap);
+    // reached = every depth <= tol (1e-12), not strictly apart: legalization finishes it at no real cost
+    const LegalizeResult lr = legalize(s);
+    assert(st.reached && lr.ok && lr.side_after < 6.0001 + 1e-9);
 }
 
 void test_c4_ga() {

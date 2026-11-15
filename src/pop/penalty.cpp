@@ -7,6 +7,7 @@ namespace pack {
 namespace {
 
 constexpr double kReach = 1.4142135623730951;  // centre distance below which two unit squares can touch
+constexpr double kSkin = 0.3;                   // Verlet margin; a rebuild once a square moved kSkin / 2
 
 inline double sgn(double v) { return (v > 0.0) - (v < 0.0); }
 
@@ -105,6 +106,46 @@ void for_each_close_pair(const Packing& p, const Workspace& ws, int nc, F&& f) {
     }
 }
 
+// The close pairs: from the Verlet list while ws.verlet is on (rebuilt when stale), else from the grid.
+template <class F>
+void visit_pairs(const Packing& p, Workspace& ws, F&& f) {
+    int nc;
+    double side;
+    const size_t N = static_cast<size_t>(p.n());
+    if (!ws.verlet) {
+        build_grid(p, ws, nc, side);
+        for_each_close_pair(p, ws, nc, f);
+        return;
+    }
+    bool stale = !ws.verlet_valid || ws.verlet_h != p.h || ws.ref.size() != 2 * N;
+    for (size_t i = 0; i < N && !stale; ++i) {
+        const double dx = p.xyt[3 * i] - ws.ref[2 * i], dy = p.xyt[3 * i + 1] - ws.ref[2 * i + 1];
+        stale = dx * dx + dy * dy > 0.25 * kSkin * kSkin;
+    }
+    if (stale) {
+        build_grid(p, ws, nc, side);
+        ws.pairs.clear();
+        const double cut = (kReach + kSkin) * (kReach + kSkin);
+        for_each_close_pair(p, ws, nc, [&](int i, int j) {
+            const double dx = p.xyt[3 * static_cast<size_t>(i)] - p.xyt[3 * static_cast<size_t>(j)];
+            const double dy = p.xyt[3 * static_cast<size_t>(i) + 1] - p.xyt[3 * static_cast<size_t>(j) + 1];
+            if (dx * dx + dy * dy < cut) {
+                ws.pairs.push_back(i);
+                ws.pairs.push_back(j);
+            }
+        });
+        ws.ref.resize(2 * N);
+        for (size_t i = 0; i < N; ++i) {
+            ws.ref[2 * i] = p.xyt[3 * i];
+            ws.ref[2 * i + 1] = p.xyt[3 * i + 1];
+        }
+        ws.verlet_h = p.h;
+        ws.verlet_valid = true;
+        ++ws.verlet_builds;
+    }
+    for (size_t k = 0; k < ws.pairs.size(); k += 2) f(ws.pairs[k], ws.pairs[k + 1]);
+}
+
 }  // namespace
 
 CostInfo cost_grad(const Packing& p, Penalty pen, Workspace& ws, double* grad) {
@@ -119,10 +160,6 @@ CostInfo cost_grad(const Packing& p, Penalty pen, Workspace& ws, double* grad) {
         ws.c[i] = std::cos(xyt[3 * i + 2]);
         ws.s[i] = std::sin(xyt[3 * i + 2]);
     }
-    int nc;
-    double side;
-    build_grid(p, ws, nc, side);
-
     if (pen == Penalty::Area2) {
         ws.parts.resize(N);
         for (size_t i = 0; i < N; ++i) ws.parts[i].set_pose(xyt[3 * i], xyt[3 * i + 1], xyt[3 * i + 2]);
@@ -137,7 +174,7 @@ CostInfo cost_grad(const Packing& p, Penalty pen, Workspace& ws, double* grad) {
                 grad[3 * i + 2] += 2 * out * gw.theta;
             }
         }
-        for_each_close_pair(p, ws, nc, [&](int i, int j) {
+        visit_pairs(p, ws, [&](int i, int j) {
             Pose gi, gj;
             const size_t a = static_cast<size_t>(i), b = static_cast<size_t>(j);
             const double ar = overlap_area_grad(ws.parts[a], ws.square, ws.parts[b], ws.square,
@@ -176,7 +213,7 @@ CostInfo cost_grad(const Packing& p, Penalty pen, Workspace& ws, double* grad) {
             }
         }
     }
-    for_each_close_pair(p, ws, nc, [&](int i, int j) {
+    visit_pairs(p, ws, [&](int i, int j) {
         const size_t a = static_cast<size_t>(i), b = static_cast<size_t>(j);
         const double dx = xyt[3 * a] - xyt[3 * b], dy = xyt[3 * a + 1] - xyt[3 * b + 1];
         if (dx * dx + dy * dy >= kReach * kReach) return;

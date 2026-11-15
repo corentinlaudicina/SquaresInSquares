@@ -43,6 +43,13 @@ struct Workspace {
     Shape square = make_square(1.0);
     // relax_capped's buffers (relax_capped.cpp)
     std::vector<double> g, g_old, d, best, hist_s, hist_y, rho, alpha;
+    // Neighbour (Verlet) list, used only while `verlet` is set (relax_capped sets it for the length of one
+    // relaxation): the pairs within kReach + kSkin, rebuilt once a square has moved kSkin / 2 since.
+    bool verlet = false, verlet_valid = false;
+    double verlet_h = 0.0;
+    std::vector<int> pairs;     // i0, j0, i1, j1, ...
+    std::vector<double> ref;    // x, y per square at the last rebuild
+    long verlet_builds = 0;     // rebuild count (for the micro-benchmark)
     // symmetric genotypes (symmetric.cpp): the expanded packing and its gradient
     Packing sym_full;
     std::vector<double> sym_g;

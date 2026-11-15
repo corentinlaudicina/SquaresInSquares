@@ -121,6 +121,28 @@ void test_relax_reaches_tolerance() {
     }
 }
 
+void test_verlet_list_misses_nothing() {
+    std::mt19937_64 rng(17);
+    std::normal_distribution<double> step(0.0, 0.03);
+    for (Penalty pen : {Penalty::Depth2, Penalty::Area2}) {
+        Packing p = random_packing(120, 9.5, 21);
+        Workspace listed, fresh;
+        listed.verlet = true;
+        std::vector<double> ga(p.xyt.size()), gb(p.xyt.size());
+        for (int it = 0; it < 300; ++it) {
+            for (double& v : p.xyt) v += step(rng);  // ~0.03 per step: a rebuild every few steps
+            const CostInfo a = cost_grad(p, pen, listed, ga.data());
+            const CostInfo b = cost_grad(p, pen, fresh, gb.data());  // the grid, every time
+            assert(std::abs(a.cost - b.cost) <= 1e-12 * std::max(1.0, b.cost));
+            assert(a.max_depth == b.max_depth && a.max_wall == b.max_wall);
+            for (size_t k = 0; k < ga.size(); ++k) assert(std::abs(ga[k] - gb[k]) <= 1e-10 * std::max(1.0, std::abs(gb[k])));
+        }
+        std::printf("  verlet list (%s): 300 steps match the grid exactly, %ld rebuilds\n",
+                    pen == Penalty::Depth2 ? "depth2" : "area2", listed.verlet_builds);
+        assert(listed.verlet_builds > 5 && listed.verlet_builds < 300);
+    }
+}
+
 void test_backend_is_thread_independent() {
     std::vector<Packing> a;
     for (unsigned s = 0; s < 24; ++s) a.push_back(random_packing(25, 5.4, 100 + s));
@@ -145,6 +167,7 @@ int main() {
     test_area2_matches_system();
     test_depth_is_sat_penetration();
     test_relax_reaches_tolerance();
+    test_verlet_list_misses_nothing();
     test_backend_is_thread_independent();
     std::printf("pop: all tests passed\n");
 }
