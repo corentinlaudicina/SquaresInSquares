@@ -1,5 +1,5 @@
 // engine --N <n> --seed <s> (--time <sec> | --kicks <k>) --out <file.json> [--schedule <file.json>]
-//        [--start <file>] [--telemetry <file>] [--neighbors <dir>] [--mode shrink|cycle|ga]   (--mode only without --schedule)
+//        [--start <file>] [--telemetry <file>] [--neighbors <dir>] [--live <snapshot.json>] [--mode shrink|cycle|ga]   (--mode only without --schedule)
 //        engine --list-schedule-keys
 //        engine --check-schedule <file.json>
 //        engine --legalize <in> --out <out.json>
@@ -59,7 +59,7 @@ int main(int argc, char** argv) {
     unsigned long long seed = 1;
     double time_s = 0.0;
     long kicks = 0;
-    std::string out, schedule, start, telemetry, mode = "shrink", legalize_only, neighbors = "best";
+    std::string out, schedule, start, telemetry, mode = "shrink", legalize_only, neighbors = "best", live;
     for (int k = 1; k < argc; ++k) {
         const std::string a = argv[k];
         if (a == "--check-schedule") {  // parse only: exit 0 if the engine accepts the file, 2 if not
@@ -90,6 +90,7 @@ int main(int argc, char** argv) {
         else if (a == "--mode") mode = v;
         else if (a == "--legalize") legalize_only = v;
         else if (a == "--neighbors") neighbors = v;
+        else if (a == "--live") live = v;
         else usage("unknown option " + a);
     }
     // engine --legalize <in> --out <out.json>: no search, only legalization (for imports).
@@ -134,6 +135,16 @@ int main(int argc, char** argv) {
         sched_info = {{"name", ps->name}, {"hash", ps->hash}, {"file", schedule}, {"resolved", ps->resolved}};
     }
     cfg.ga.seeding.neighbor_dir = neighbors;  // GA seeding reads N+1 / N-1 from here (default best/)
+    if (!live.empty()) {  // snapshots for tools/live_view.py: written to <live>.tmp, then renamed
+        cfg.live = [live](const json& snap) {
+            const std::string tmp = live + ".tmp";
+            {
+                std::ofstream f(tmp);
+                f << snap.dump() << '\n';
+            }
+            std::rename(tmp.c_str(), live.c_str());
+        };
+    }
     cfg.wall_seconds = time_s;
     cfg.max_kicks = kicks;
 

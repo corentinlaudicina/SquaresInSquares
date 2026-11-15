@@ -87,18 +87,3 @@ relaxation 1.33x faster on one thread, 1.45x on eight.
 Daily entries from here on are drafted by `tools/notebook_entry.py` and published with
 `tools/publish_notebook.sh`.
 
-## 2026-11-15: the first live protocol could not produce a record
-
-After 22 runs (4.7 job-hours) no improvement, and the ledger showed why, by construction:
-`shrink-capped` inherits the mirrored start, so it rebuilt every record from a broken copy (all 18 runs
-ended worse, median +1.1e-3); `ga-seeded` aimed its first ratchet 0.02% below the record, which a
-near-optimal packing never fits (all runs ended exactly at the record). The recovery gates had started
-about 1% worse than the best, where neither problem shows.
-
-- Fix: an **adaptive ratchet** per island (start 1e-6 below the last fit, x1.5 after a fit, halve and
-  loosen after 8 generations without one, floor 1e-9). On a 5 x 5 grid with 1e-4 of slack the fixed
-  ratchet stays at 5.000400, the adaptive one reaches 5.0000044 (optimum 5).
-- Polish test (start = record scaled up by 1e-4): N = 491, 600 s: closed 96% of the gap. N = 300, 180 s:
-  adaptive island GA 90%, single-packing `shrink-polish` (no mirror) 99%.
-- **Decision** (Corentin): island GA on essentially all N, focus on N > 300 for now. Production schedule
-  `ga-seeded-adapt`; the machine enforces an island GA for exploit and explore jobs.

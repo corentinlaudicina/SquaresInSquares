@@ -129,9 +129,17 @@ std::vector<int> neighbours(int i, int k, int topology) {
 
 }  // namespace
 
+json squares_json(const System& sys) {
+    json sq = json::array();
+    for (const Particle& p : sys.particles) sq.push_back({p.x(), p.y(), p.theta()});
+    return sq;
+}
+
 GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long seed, double wall_seconds,
-                 long max_generations, const std::function<void(double, GAConfig&)>& update) {
+                 long max_generations, const std::function<void(double, GAConfig&)>& update,
+                 const std::function<void(const json&)>& live) {
     const auto t0 = Clock::now();
+    double last_live = -1e9;
     const auto wall = [&] { return std::chrono::duration<double>(Clock::now() - t0).count(); };
     GAOutcome out;
     json& tel = out.telemetry;
@@ -358,6 +366,25 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
                 }
                 gens.push_back(e);
             }
+        }
+
+        // Live snapshot (engine --live): the legal best and every island's champion, every 2 s.
+        if (live && wall() - last_live >= 2.0) {
+            last_live = wall();
+            json snap = {{"format", "sqpack-live/1"}, {"mode", "ga"}, {"n", start.particles.size()}, {"t", last_live},
+                         {"generation", generation}, {"start_side", tel["side"]["start_legal"]},
+                         {"best", {{"side", out.best_side}, {"squares", squares_json(out.best)}}}};
+            json isls = json::array();
+            for (size_t k = 0; k < isl.size(); ++k) {
+                const Island& is = isl[k];
+                const Packing champ = expanded(is.pop.front().p, L);
+                json sq = json::array();
+                for (size_t q = 0; q < champ.xyt.size(); q += 3) sq.push_back({champ.xyt[q], champ.xyt[q + 1], champ.xyt[q + 2]});
+                isls.push_back({{"source", island_source[k]}, {"h", is.h}, {"eps", is.eps}, {"ratchets", is.ratchets},
+                                {"cost", is.pop.front().info.cost}, {"depth", is.pop.front().info.max_depth}, {"squares", sq}});
+            }
+            snap["islands"] = isls;
+            live(snap);
         }
     }
 

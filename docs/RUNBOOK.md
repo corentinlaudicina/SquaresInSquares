@@ -99,6 +99,9 @@ Only N marked `open` in `data/known_optima_1_1000.csv` are ever queued. Details:
 The daily cycle also drafts a lab-notebook entry (`planner/notebook/<date>.md`, local);
 `tools/publish_notebook.sh` appends the new drafts to `docs/NOTEBOOK.md`, commits and pushes (by hand:
 this is what makes results public; `-n` previews).
+Live view: `src/viz/.venv/bin/python tools/live_view.py` (every running job, one panel each; pass a job id
+for its best and every island champion). It reads the snapshots the engine writes with `--live`
+(`runs/jobs/<id>/live.json`, every ~2 s; the runner always passes it).
 Watch it: `python3 tools/status.py` (one screen; `watch -n 60 python3 tools/status.py` to keep it open).
 
 ## Benchmark

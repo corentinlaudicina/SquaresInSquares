@@ -91,6 +91,10 @@ struct GAOutcome {
 // `start` is legalized first. Budget: wall seconds and/or generations (0 = unlimited; one must be set).
 // `update`, if set, is called before each generation with the elapsed budget fraction (schedule curves).
 GAOutcome run_ga(const System& start, const GAConfig& cfg, unsigned long long seed, double wall_seconds,
-                 long max_generations, const std::function<void(double, GAConfig&)>& update = {});
+                 long max_generations, const std::function<void(double, GAConfig&)>& update = {},
+                 const std::function<void(const nlohmann::json&)>& live = {});
+
+// The packing as JSON squares [[x, y, theta], ...] (for live snapshots).
+nlohmann::json squares_json(const System& sys);
 
 }  // namespace pack

@@ -85,6 +85,10 @@ struct EngineConfig {
     // Schedule curves (schedule.hpp): if set, called before every kick with the elapsed budget
     // fraction in [0, 1] to update the per-kick parameters of a working copy of this config.
     std::function<void(double, EngineConfig&)> update;
+
+    // engine --live: called with a JSON snapshot of the search about every 2 s (GA: legal best and island
+    // champions; shrink / cycle: the best so far). Reads only; it cannot change the search.
+    std::function<void(const nlohmann::json&)> live;
 };
 
 struct EngineResult {

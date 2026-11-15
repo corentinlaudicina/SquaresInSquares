@@ -115,7 +115,7 @@ EngineResult run_ga_mode(const System& seed, const EngineConfig& cfg, unsigned l
             g = c.ga;
         };
     }
-    GAOutcome go = run_ga(start, cfg.ga, seed_value, cfg.wall_seconds, cfg.max_kicks, hook);
+    GAOutcome go = run_ga(start, cfg.ga, seed_value, cfg.wall_seconds, cfg.max_kicks, hook, cfg.live);
     EngineResult out;
     out.found = std::isfinite(go.best_side);
     out.best = go.best;
@@ -220,7 +220,14 @@ EngineResult run_engine(const System& seed, const EngineConfig& cfg, unsigned lo
     };
 
     EngineConfig c = cfg;  // the per-kick parameters, after the schedule's curves
+    double last_live = -1e9;
     for (; more(); ++kick_no) {
+        if (cfg.live && wall() - last_live >= 2.0) {
+            last_live = wall();
+            cfg.live({{"format", "sqpack-live/1"}, {"mode", cfg.mode}, {"n", seed.particles.size()}, {"t", last_live},
+                      {"generation", kick_no}, {"start_side", initial.side},
+                      {"best", {{"side", best_side}, {"squares", squares_json(best)}}}});
+        }
         if (cfg.update) {
             double frac = 0.0;
             if (cfg.max_kicks > 0) frac = static_cast<double>(kick_no) / static_cast<double>(cfg.max_kicks);

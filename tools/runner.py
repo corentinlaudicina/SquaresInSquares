@@ -200,7 +200,8 @@ class Runner:
         for stale in (out, d / "out.telemetry.json"):
             stale.unlink(missing_ok=True)
         cmd = [str(self.engine), "--N", str(job["N"]), "--seed", str(job["seed"]), "--time", str(job["time"]),
-               "--schedule", str(d / "schedule.json"), "--start", str(start), "--out", str(out)]
+               "--schedule", str(d / "schedule.json"), "--start", str(start), "--out", str(out),
+               "--live", str(d / "live.json")]  # snapshots every ~2 s for tools/live_view.py
         if job["kicks"]:
             cmd += ["--kicks", str(job["kicks"])]
         # The engine checks the clock only between kicks, and legalization comes after: allow slack.
