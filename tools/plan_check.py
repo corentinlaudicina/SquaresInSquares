@@ -62,8 +62,8 @@ def set_dotted(d, path, value):
 
 
 def check_and_build(plan, root, engine, today):
-    """Returns (queue, variants {path: doc}, errors)."""
-    errs = []
+    """Returns (queue, variants {path: doc}, errors); warnings go into queue["warnings"]."""
+    errs, warnings = [], []
     status = plan_digest.load_status(root)
     m = plan_digest.machine(root)
     keys = set()
@@ -100,8 +100,12 @@ def check_and_build(plan, root, engine, today):
             errs.append(f"job {i}: bad N {j.get('N')!r}")
             continue
         closed = [n for n in ns if status.get(n) != "open"]
-        if closed:
-            errs.append(f"job {i}: N {closed[:5]} are not open (proven optima or out of range)")
+        if closed:  # never run them; dropping N only shrinks the plan, so the rest of it stands
+            warnings.append(f"job {i}: dropped N {closed[:8]} (not open: proven optima or out of range)")
+            ns = [n for n in ns if status.get(n) == "open"]
+            if not ns:
+                errs.append(f"job {i}: no open N left")
+                continue
         if not tag:
             errs.append(f"job {i}: no tag (exploit, explore or H<id>)")
         if sched in variants:
@@ -135,7 +139,7 @@ def check_and_build(plan, root, engine, today):
         errs.append(f"N={n} gets {c / 3600:.1f} job-hours, over 20% of the plan")
     if experiments > 0.25 * max(total, 1.0):
         errs.append(f"experiments take {experiments / total:.0%} of the plan, over 25%")
-    return {"defaults": {"start": "best"}, "jobs": jobs}, variants, errs
+    return {"defaults": {"start": "best"}, "jobs": jobs, "warnings": warnings}, variants, errs
 
 
 def fallback(root, today):
@@ -161,7 +165,7 @@ def apply(plan, queue, variants, root, today):
     pdir = root / "planner"
     for rel, doc in variants.items():
         write_json(root / rel, doc)
-    write_json(root / "queue.json", queue)
+    write_json(root / "queue.json", {k: v for k, v in queue.items() if k != "warnings"})
     hyp_path = pdir / "hypotheses.jsonl"
     hyps = {}
     if hyp_path.exists():
@@ -217,6 +221,8 @@ def main(argv=None):
     if errs:
         print("plan_check: plan rejected:\n  " + "\n  ".join(errs))
         return 1
+    for w in queue["warnings"]:
+        print(f"plan_check: warning: {w}")
     apply(plan, queue, variants, root, today)
     print(f"plan_check: plan accepted: {len(queue['jobs'])} job specs, {len(variants)} variants. {plan.get('summary', '')[:200]}")
     return 0

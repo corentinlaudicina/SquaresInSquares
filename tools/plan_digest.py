@@ -105,6 +105,18 @@ def rank(root, ledger, now):
     return rows
 
 
+def ranges(ns):
+    """[1, 2, 3, 7, 9, 10] -> "1-3, 7, 9-10"."""
+    out, i = [], 0
+    while i < len(ns):
+        j = i
+        while j + 1 < len(ns) and ns[j + 1] == ns[j] + 1:
+            j += 1
+        out.append(f"{ns[i]}-{ns[j]}" if j > i else str(ns[i]))
+        i = j + 1
+    return ", ".join(out)
+
+
 def fmt_t(t, now):
     if not t:
         return "-"
@@ -125,6 +137,7 @@ def digest(root, now=None, top=30):
     improved = {r["N"] for r in ledger if r.get("stored") == "best"}
     L += ["## Coverage", f"- open N: {len(ns)} of {len(status)} (the rest are proven optima: never queue them)",
           f"- open N ever tried: {len(tried & set(ns))}, ever improved: {len(improved & set(ns))}",
+          f"- the open N (only these may be queued): {ranges(ns)}",
           f"- last 24 h: {len(day)} jobs, {sum(r.get('stored') == 'best' for r in day)} improvements, "
           f"{sum(r.get('wall_s', 0) for r in day) / 3600:.1f} job-hours", ""]
 

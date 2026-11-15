@@ -53,6 +53,7 @@ class Planner(unittest.TestCase):
         self.assertTrue(listed and set(listed) <= set(OPEN))
         self.assertEqual(listed[0], 7)  # the bump in the waste curve ranks first
         self.assertIn("N=6 2.600000000 -> 2.550000000", text)
+        self.assertIn("only these may be queued): 5-9, 90-91", text)
         self.assertIn("| exploit | 1 | 1 |", text)
 
     def test_good_plan_is_applied_with_fresh_seeds(self):
@@ -73,7 +74,10 @@ class Planner(unittest.TestCase):
         def errs(job, **extra):
             return self.check({"jobs": [job], **extra})[2]
         base = {"N": 5, "schedule": "schedules/ga.json", "time": 300, "seeds": 1, "tag": "exploit"}
-        self.assertTrue(any("not open" in e for e in errs({**base, "N": [4, 5]})))
+        q, _, e = self.check({"jobs": [{**base, "N": [4, 5]}]})  # closed N are dropped with a warning
+        self.assertEqual((e, q["jobs"][0]["N"]), ([], 5))
+        self.assertTrue(any("dropped N [4]" in w for w in q["warnings"]))
+        self.assertTrue(any("no open N left" in e for e in errs({**base, "N": [1, 2]})))
         self.assertTrue(any("does not exist" in e for e in errs({**base, "schedule": "schedules/nope.json"})))
         self.assertTrue(any("budget" in e for e in errs({**base, "N": "5-9", "time": 3600, "seeds": 8})))
         self.assertTrue(any("time" in e for e in errs({**base, "time": 5})))
