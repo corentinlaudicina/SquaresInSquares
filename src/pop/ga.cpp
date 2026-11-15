@@ -387,9 +387,10 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
                 is.mark = pop.front().info.cost;
                 is.since_progress = 0;
             } else if (c.ratchet_adapt && ++is.since_adjust >= c.ratchet_patience && is.eps > c.ratchet_min) {
-                // no fit for a while: halve the step and loosen the target back towards the last fit
+                // no fit for a while: halve the step and loosen the target back towards this island's own last fit
+                // (not the record: islands on other structures need more room than the record's box gives)
                 is.eps = std::max(c.ratchet_min, is.eps * c.ratchet_down);
-                is.h = std::min(is.fit_h, out.best_side) * (1.0 - is.eps);
+                is.h = is.fit_h * (1.0 - is.eps);
                 for (Individual& x : pop) rescale(x.p, is.h);
                 std::vector<int> all(pop.size());
                 std::iota(all.begin(), all.end(), 0);
