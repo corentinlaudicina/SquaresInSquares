@@ -33,12 +33,32 @@ written.
 - total job time / workers <= budget (+5%); no N over 20% of the plan; experiments <= 25%;
   30 s <= time <= 3600 s; seeds is a count (1-8), turned into fresh seed values per day.
 
+## New schedules and new moves
+- **Schedules** are data: the planner designs them freely in `new_schedules` (a `base` file plus any
+  existing keys in `changes`, including the mode, islands, seeding, symmetry, moves, relaxation,
+  ratchet). They run only in experiment jobs (`H<id>`) until a confirmed hypothesis puts them in the
+  playbook; from then on the planner uses them in exploit jobs.
+- **Moves** are code, so the planner only *designs* them (`move_proposals`: idea, mechanism, why);
+  `plan_check` saves each to `planner/proposals/<date>-<name>.md` and the digest lists their status.
+  Building one is a separate, hand-started step:
+  ```sh
+  tools/implement_move.sh planner/proposals/2026-11-16-row-shift.md
+  ```
+  It creates a git worktree on branch `move/<name>`, runs `claude -p` there with edit and shell tools
+  (`planner_template/implement_move.md`: the move goes in with weight 0, plus keys, a test and
+  `schedules/planner/ga-<name>.json`), runs `make check`, then a recovery gate of that schedule against
+  `schedules/ga.json` on 6 N x 2 seeds. The result is written back into the proposal. You review the
+  branch and merge it; after that the planner can weight `ga.moves.<name>` in a new schedule.
+  The implementer has an unrestricted shell inside its worktree (spending cap `CLAUDE_BUDGET_USD`,
+  default $5): it is started by you, not by the daily cycle, for that reason.
+
 ## State (per machine, gitignored, under `planner/`)
 | file | what |
 |---|---|
 | `machine.json` | workers, cores, `until`, budget hours, claude spending cap per turn |
 | `prompt.md`, `playbook.md` | copied from `planner_template/` at setup; the playbook grows only with confirmed hypotheses |
 | `hypotheses.jsonl` | the planner's hypothesis log, updated by `plan_check` |
+| `proposals/<date>-<name>.md` | move proposals and their status (proposed, implemented, gated) |
 | `digest.md`, `plans/<date>.raw.json`, `plans/<date>.queue.json` | each day's input, answer and queue |
 | `daily.log`, `runner.log`, `runner.pid` | logs; `kill $(cat planner/runner.pid)` stops the search |
 

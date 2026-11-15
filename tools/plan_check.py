@@ -175,6 +175,13 @@ def apply(plan, queue, variants, root, today):
         if isinstance(h, dict) and re.fullmatch(r"H\d+", str(h.get("id", ""))):
             hyps[h["id"]] = {**hyps.get(h["id"], {}), **h, "updated": today.isoformat()}
     hyp_path.write_text("".join(json.dumps(h) + "\n" for h in hyps.values()))
+    for mp in plan.get("move_proposals") or []:
+        name = str(mp.get("name", "")) if isinstance(mp, dict) else ""
+        if re.fullmatch(r"[a-z0-9][a-z0-9-]{1,40}", name):
+            prop = pdir / "proposals" / f"{today.isoformat()}-{name}.md"
+            prop.parent.mkdir(parents=True, exist_ok=True)
+            prop.write_text(f"# Move proposal: {name}\n\nstatus: proposed ({today.isoformat()})\n\n"
+                            + "".join(f"**{k}**: {mp.get(k, '')}\n\n" for k in ("idea", "mechanism", "why")))
     adds = [a for a in plan.get("playbook_additions") or [] if isinstance(a, str) and re.search(r"\bH\d+\b", a)]
     if adds:
         with open(pdir / "playbook.md", "a") as f:

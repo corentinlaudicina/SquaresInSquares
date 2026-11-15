@@ -57,13 +57,17 @@ class Planner(unittest.TestCase):
 
     def test_good_plan_is_applied_with_fresh_seeds(self):
         plan = {"summary": "s", "jobs": [{"N": "5-7", "schedule": "schedules/shrink-capped.json", "time": 300, "seeds": 2, "tag": "exploit"}],
-                "hypotheses": [{"id": "H1", "status": "open", "claim": "c"}]}
+                "hypotheses": [{"id": "H1", "status": "open", "claim": "c"}],
+                "move_proposals": [{"name": "row-shift", "idea": "i", "mechanism": "m", "why": "w"}, {"name": "Bad Name!"}]}
         queue, variants, errs = self.check(plan)
         self.assertEqual(errs, [])
         self.assertEqual(queue["jobs"][0]["seeds"], [202611160, 202611161])
         plan_check.apply(plan, queue, variants, self.root, self.today)
         self.assertTrue((self.root / "queue.json").exists())
         self.assertIn("H1", (self.root / "planner" / "hypotheses.jsonl").read_text())
+        props = list((self.root / "planner" / "proposals").glob("*.md"))
+        self.assertEqual([p.name for p in props], ["2026-11-16-row-shift.md"])  # the badly named one is dropped
+        self.assertIn("2026-11-16-row-shift", plan_digest.digest(self.root))
 
     def test_rejections(self):
         def errs(job, **extra):

@@ -181,6 +181,14 @@ def digest(root, now=None, top=30):
     L += ["## Problems (last 24 h)", f"- {len(bad)} failed or invalid jobs" +
           (": " + ", ".join(f"N={r['N']} {r['status']}" for r in bad[:8]) if bad else ""), ""]
 
+    props = sorted((root / "planner" / "proposals").glob("*.md"))
+    L += ["## Move proposals", ""]
+    for p in props:
+        status = next((l for l in p.read_text().splitlines() if l.startswith("status:")), "status: ?")
+        L.append(f"- `{p.stem}`: {status[8:]}")
+    if not props:
+        L.append("- none")
+    L.append("")
     L += ["## Schedules available", ""]
     for p in sorted((root / "schedules").glob("*.json")) + sorted((root / "schedules" / "planner").glob("*.json")):
         try:
