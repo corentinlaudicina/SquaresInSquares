@@ -1,7 +1,7 @@
 {
   "schema": "sqpack.schedule/1",
   "name": "ga-seeded",
-  "description": "Phase 3 item 7: ga-islands with islands seeded from best/(N+1) minus a square, best/(N-1) plus a square, and grid/diagonal lattices (island i from source i mod S).",
+  "description": "Phase 3 item 7: ga-islands with islands seeded from best/(N+1) minus a square, best/(N-1) plus a square, and grid/diagonal lattices (island i from source i mod S). Diversity off (item 5 failed its gate), so only this item differs from ga-nodiv.",
   "mode": "ga",
   "start": {
     "mirror": false
@@ -37,7 +37,7 @@
     "shrink": 0.0002
   },
   "diversity": {
-    "elite": 0.25,
+    "elite": 1.0,
     "threshold": 0.05,
     "hist_threshold": 0.05,
     "metric": "auto",

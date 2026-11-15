@@ -1,7 +1,7 @@
 {
   "schema": "sqpack.schedule/1",
   "name": "ga-c4",
-  "description": "Phase 3 item 8: schedules/ga.json with C4-symmetric genotypes (generators only; expansion for evaluation, gradients pulled back, symmetric crossover).",
+  "description": "Phase 3 item 8: schedules/ga.json with C4-symmetric genotypes (generators only; expansion for evaluation, gradients pulled back, symmetric crossover). Diversity off (item 5 failed its gate), so only this item differs from ga-nodiv.",
   "mode": "ga",
   "start": {
     "mirror": false
@@ -36,7 +36,7 @@
     "shrink": 0.0002
   },
   "diversity": {
-    "elite": 0.25,
+    "elite": 1.0,
     "threshold": 0.05,
     "hist_threshold": 0.05,
     "metric": "auto",
