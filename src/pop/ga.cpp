@@ -51,13 +51,13 @@ void rescale(Packing& p, double h) {
 }
 
 // Relax a set of individuals in place with one backend call.
-void relax_all(std::vector<Individual>& v, const std::vector<int>& which, const CappedParams& prm, RelaxBackend& be,
-               const SymLayout* sym = nullptr) {
+void relax_all(std::vector<Individual>& v, const std::vector<int>& which, const CappedParams& prm, CpuBackend& be,
+               const SymLayout& L) {
     std::vector<Packing> batch;
     batch.reserve(which.size());
     for (const int i : which) batch.push_back(std::move(v[static_cast<size_t>(i)].p));
     std::vector<CappedStats> st;
-    be.relax_batch(batch, prm, st, sym);
+    be.relax_batch(batch, prm, st, &L);
     for (size_t k = 0; k < which.size(); ++k) {
         v[static_cast<size_t>(which[k])].p = std::move(batch[k]);
         v[static_cast<size_t>(which[k])].info = st[k].info;
@@ -85,7 +85,7 @@ void sort_pop(std::vector<Individual>& pop) {
 // Population in box h: slot k is source k mod S (rescaled to h), jiggled from slot S on, relaxed
 // rough then fine. One source: the source plus jiggled copies of it.
 void seed_island(Island& is, const std::vector<const System*>& from, double h, const GAConfig& c, std::mt19937_64& rng,
-                 RelaxBackend& be, const SymLayout& L) {
+                 CpuBackend& be, const SymLayout& L) {
     std::vector<Packing> base;
     for (const System* f : from) {
         base.push_back(L.sym == Sym::None ? to_packing(*f) : symmetrize(to_packing(*f), L));
@@ -101,8 +101,8 @@ void seed_island(Island& is, const std::vector<const System*>& from, double h, c
     }
     std::vector<int> all(is.pop.size());
     std::iota(all.begin(), all.end(), 0);
-    relax_all(is.pop, all, rough_params(c), be, &L);
-    relax_all(is.pop, all, fine_params(c), be, &L);
+    relax_all(is.pop, all, rough_params(c), be, L);
+    relax_all(is.pop, all, fine_params(c), be, L);
     sort_pop(is.pop);
     is.since_progress = 0;
     is.mark = is.pop.front().info.cost;
@@ -134,10 +134,6 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
     CpuBackend be(c.threads);
     const SymLayout L = make_layout(c.symmetry == 1 ? Sym::C2 : c.symmetry == 2 ? Sym::C4 : Sym::None,
                                     static_cast<int>(start.particles.size()));
-    if (c.symmetry != 0) {
-        tel["ga"]["symmetry"] = L.sym == Sym::C2 ? "c2" : L.sym == Sym::C4 ? "c4" : "none (impossible for this N)";
-        tel["ga"]["generators"] = L.m;
-    }
 
     // The best legal packing so far, starting with the legalized start.
     out.best = start;
@@ -148,11 +144,10 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
 
     // Sources: the start, then the seeding candidates (item 7), each legal with its own side.
     const std::vector<SeedCandidate> cands = seed_candidates(static_cast<int>(start.particles.size()), c.seeding, rng);
-    std::vector<const System*> sources = {&out.best};
+    const System start_legal = out.best;  // a copy: out.best changes below, sources[0] must not
+    std::vector<const System*> sources = {&start_legal};
     std::vector<std::string> source_names = {"start"};
     json seeds = json::array();
-    const System start_legal = out.best;  // sources[0] must not move when out.best improves below
-    sources[0] = &start_legal;
     for (const SeedCandidate& sc : cands) {
         sources.push_back(&sc.sys);
         source_names.push_back(sc.source);
@@ -175,7 +170,8 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
             island_source[static_cast<size_t>(i)] = source_names[src];
             seed_island(isl[static_cast<size_t>(i)], {sources[src]}, std::min(sources[src]->L, out.best_side * 1.05) * (1.0 - c.ratchet_shrink), c, rng, be, L);
         } else {
-            seed_island(isl[static_cast<size_t>(i)], sources, out.best_side * (1.0 - c.ratchet_shrink), c, rng, be, L);
+            // out.best.L, not out.best_side: the same once anything is legal, but finite when nothing is
+            seed_island(isl[static_cast<size_t>(i)], sources, out.best.L * (1.0 - c.ratchet_shrink), c, rng, be, L);
         }
     }
 
@@ -183,7 +179,6 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
     std::array<double, 6> tsplit{};  // offspring, prefilter, rough, fine, select, ratchet
     long generation = 0, legal_improvements = 0, distance_evals = 0, migrations = 0;
     json gens = json::array();
-    std::string stop = "budget";
 
     const auto more = [&] {
         if (max_generations > 0 && generation >= max_generations) return false;
@@ -259,7 +254,7 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
             lap(t, 1);
 
             // 3. relax: rough for the pre-filtered, fine for the best of those
-            relax_all(kids, order, rough_params(c), be, &L);
+            relax_all(kids, order, rough_params(c), be, L);
             for (const int i : order) ++relaxed[static_cast<size_t>(kids[static_cast<size_t>(i)].move)];
             lap(t, 2);
             std::stable_sort(order.begin(), order.end(), [&](int x, int y) {
@@ -267,7 +262,7 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
             });
             order.resize(static_cast<size_t>(std::clamp<long>(std::lround(c.fine_frac * static_cast<double>(order.size())), 1,
                                                               static_cast<long>(order.size()))));
-            relax_all(kids, order, fine_params(c), be, &L);
+            relax_all(kids, order, fine_params(c), be, L);
             lap(t, 3);
 
             // 4. selection from parents + fine-relaxed offspring
@@ -306,7 +301,7 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
                 for (Individual& x : pop) rescale(x.p, is.h);
                 std::vector<int> all(pop.size());
                 std::iota(all.begin(), all.end(), 0);
-                relax_all(pop, all, fine_params(c), be, &L);
+                relax_all(pop, all, fine_params(c), be, L);
                 sort_pop(pop);
                 ++is.ratchets;
                 ratcheted = true;
@@ -318,7 +313,7 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
             } else {
                 is.longest_stall = std::max(is.longest_stall, ++is.since_progress);
                 if (c.island_patience > 0 && is.since_progress >= c.island_patience) {
-                    seed_island(is, {&out.best}, out.best_side * (1.0 - c.ratchet_shrink), c, rng, be, L);
+                    seed_island(is, {&out.best}, out.best.L * (1.0 - c.ratchet_shrink), c, rng, be, L);
                     ++is.resets;
                     reset = true;
                 }
@@ -359,14 +354,16 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
         islands.push_back({{"source", island_source[static_cast<size_t>(&is - isl.data())]}, {"h", is.h}, {"ratchets", is.ratchets}, {"resets", is.resets},
                            {"best_cost", is.pop.front().info.cost}, {"longest_stall", is.longest_stall}});
     }
-    const json sym_info = tel.value("ga", json::object());
     tel["ga"] = {{"generations", generation}, {"ratchets", ratchets}, {"legal_improvements", legal_improvements},
                  {"h_final", h_final}, {"longest_stall", longest_stall}, {"threads", be.threads()},
                  {"distance_evals", distance_evals}, {"moves", moves},
                  {"seconds", {{"offspring", tsplit[0]}, {"prefilter", tsplit[1]}, {"rough", tsplit[2]},
                               {"fine", tsplit[3]}, {"select", tsplit[4]}, {"ratchet", tsplit[5]}}},
                  {"per_generation", gens}};
-    for (const auto& [k, v] : sym_info.items()) tel["ga"][k] = v;
+    if (cfg0.symmetry != 0) {  // cfg0: the layout was fixed at start, whatever the schedule curves did
+        tel["ga"]["symmetry"] = L.sym == Sym::C2 ? "c2" : L.sym == Sym::C4 ? "c4" : "none (impossible for this N)";
+        tel["ga"]["generators"] = L.m;
+    }
     if (K > 1) {
         tel["ga"]["islands"] = islands;
         tel["ga"]["resets"] = resets;
@@ -376,7 +373,7 @@ GAOutcome run_ga(const System& start, const GAConfig& cfg0, unsigned long long s
     if (!seeds.empty()) tel["ga"]["seeds"] = seeds;
     tel["side"]["trace"] = side_trace;
     tel["side"]["best"] = out.best_side;
-    tel["budget"] = {{"wall_s", wall()}, {"kicks", generation}, {"stop", stop}};
+    tel["budget"] = {{"wall_s", wall()}, {"kicks", generation}, {"stop", "budget"}};
     return out;
 }
 

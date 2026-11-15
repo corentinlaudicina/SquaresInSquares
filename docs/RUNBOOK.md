@@ -40,6 +40,37 @@ The GA is explained in the headers of `src/pop/ga.hpp` (loop, ratchet, islands, 
 `src/pop/moves.hpp`, `src/pop/diversity.hpp` and `src/pop/symmetric.hpp`. The mirror start
 (`start.mirror`) is on in the shrink and cycle baselines and off in the GA schedules.
 
+### How the GA code fits together (`src/pop/`)
+- `penalty`: a packing is a flat `Packing {h, xyt}`. `cost_grad` gives the penalty and its gradient,
+  using a neighbour grid, or a Verlet list while a relaxation runs. A `Workspace` holds the buffers
+  for one thread.
+- `relax_capped`: L-BFGS in stages, with every step capped. `relax_core` holds the loop.
+  `relax_capped` (plain) and `relax_symmetric` (generators) only choose the cost function.
+- `backend`: `CpuBackend` is a thread pool with one `Workspace` per thread. `relax_batch` and
+  `cost_batch` take an optional `SymLayout`; with C2/C4 they work on generators. It is a plain
+  class: a GPU backend was measured and ruled out, so it has no interface.
+- `ga.cpp` `run_ga`: legalize the start, build the seeding candidates (`seeding`), then seed each
+  island with `seed_island` (rough relax, then fine). Each generation, for each island: make the
+  offspring (`moves`), pre-filter them on the raw cost, relax them rough then fine, select
+  (`diversity`; fitness only by default), then ratchet or count a stall. A run that has not
+  improved for `island_patience` generations reseeds from the best legal packing.
+- Boxes are sized from `out.best.L`. Once anything is legal, this equals `out.best_side`. If the
+  start cannot be legalized, `out.best_side` stays infinite but `out.best.L` stays finite.
+- Symmetric genotypes (`ga.symmetry`, item 8) and diversity (item 5) failed their gates. They are
+  kept as opt-in features for later work, not dead code.
+
+### Change log
+- 2026-11-15, review cleanup, no change in results (same packing and `ga` telemetry from the old and
+  new engine on `ga`, `ga-c2` and `ga-seeded`, N=29, `--kicks 15`):
+  - Removed the `RelaxBackend` interface. It had one implementation, `CpuBackend`, which is now a
+    plain class.
+  - `run_ga`: the box for one island and for an island reset now comes from `out.best.L`. Before,
+    it came from `out.best_side`, which is infinite when the start cannot be legalized; the box
+    became infinite, the positions became NaN and the whole budget was wasted.
+  - `run_ga`: symmetry telemetry is written once at the end (no save and restore around the
+    `tel["ga"]` overwrite). The start-source pointer is set once. The `stop` variable, which never
+    changed, is gone. `relax_all` takes `const SymLayout&` (every caller passed one).
+
 ## Unattended
 ```sh
 cp queue.example.yaml queue.yaml    # edit
