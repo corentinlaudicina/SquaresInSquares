@@ -20,6 +20,7 @@
 #include "pop/diversity.hpp"
 #include "pop/moves.hpp"
 #include "pop/relax_capped.hpp"
+#include "pop/seeding.hpp"
 #include "system.hpp"
 
 #include <nlohmann/json.hpp>
@@ -56,6 +57,11 @@ struct GAConfig {
     int topology = 0;              // 0 = ring, 1 = full
     long island_patience = 0;
     double island_threshold = 1e-3;
+
+    // Seeding (item 7). With islands > 1, island i starts from source i mod S (start first, then the
+    // candidates below) in a box just under that source's legal side; with one island the population
+    // mixes all sources in the start's box. All off by default.
+    SeedParams seeding;
 
     MoveParams moves;
     DiversityParams diversity;

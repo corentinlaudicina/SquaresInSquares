@@ -5,6 +5,9 @@
 #include "legalize.hpp"
 #include "pop/backend.hpp"
 #include "pop/ga.hpp"
+#include "engine/solution_io.hpp"
+
+#include <filesystem>
 
 #include <cassert>
 #include <cmath>
@@ -138,6 +141,35 @@ void test_islands() {
                 a.telemetry["ga"]["migrations"].get<long>(), a.telemetry["ga"]["resets"].get<long>());
 }
 
+void test_seeding() {
+    // neighbours of n = 5 in a temporary best/: a 2x2 grid (n = 4) and a 2x3 grid in a 3x3 box (n = 6)
+    const auto dir = std::filesystem::temp_directory_path() / "sq_test_seeding";
+    std::filesystem::create_directories(dir);
+    Packing four = grid(2);
+    Packing six;
+    six.h = 3.0;
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 2; ++j) six.xyt.insert(six.xyt.end(), {i + 0.5, j + 0.5, 0.0});
+    assert(write_solution((dir / "4.json").string(), to_system(four), {}));
+    assert(write_solution((dir / "6.json").string(), to_system(six), {}));
+    SeedParams prm;
+    prm.up = prm.down = prm.lattice = true;
+    prm.neighbor_dir = dir.string();
+    std::mt19937_64 rng(3);
+    const std::vector<SeedCandidate> c = seed_candidates(5, prm, rng);
+    std::filesystem::remove_all(dir);
+    int up = 0, down = 0, lattice = 0;
+    for (const SeedCandidate& s : c) {
+        assert(s.sys.particles.size() == 5 && strict_report(s.sys).ok());
+        assert(s.sys.L >= 2.0 + 1.0 / std::sqrt(2.0) - 1e-9);  // nobody beats s(5)
+        up += s.source.rfind("up", 0) == 0;
+        down += s.source == "down";
+        lattice += s.source.rfind("lattice", 0) == 0;
+    }
+    assert(up >= 1 && down == 1 && lattice == 2);
+    std::printf("  seeding n=5: %zu legal candidates (%d up, %d down, %d lattice)\n", c.size(), up, down, lattice);
+}
+
 }  // namespace
 
 int main() {
@@ -147,5 +179,6 @@ int main() {
     test_selection_spreads();
     test_small_ga_is_legal_and_thread_independent();
     test_islands();
+    test_seeding();
     std::printf("ga: all tests passed\n");
 }

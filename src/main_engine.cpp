@@ -1,5 +1,5 @@
 // engine --N <n> --seed <s> (--time <sec> | --kicks <k>) --out <file.json> [--schedule <file.json>]
-//        [--start <file>] [--telemetry <file>] [--mode shrink|cycle]   (--mode only without --schedule)
+//        [--start <file>] [--telemetry <file>] [--neighbors <dir>] [--mode shrink|cycle|ga]   (--mode only without --schedule)
 //        engine --list-schedule-keys
 //        engine --legalize <in> --out <out.json>
 //
@@ -58,7 +58,7 @@ int main(int argc, char** argv) {
     unsigned long long seed = 1;
     double time_s = 0.0;
     long kicks = 0;
-    std::string out, schedule, start, telemetry, mode = "shrink", legalize_only;
+    std::string out, schedule, start, telemetry, mode = "shrink", legalize_only, neighbors = "best";
     for (int k = 1; k < argc; ++k) {
         const std::string a = argv[k];
         if (a == "--list-schedule-keys") {
@@ -77,6 +77,7 @@ int main(int argc, char** argv) {
         else if (a == "--telemetry") telemetry = v;
         else if (a == "--mode") mode = v;
         else if (a == "--legalize") legalize_only = v;
+        else if (a == "--neighbors") neighbors = v;
         else usage("unknown option " + a);
     }
     // engine --legalize <in> --out <out.json>: no search, only legalization (for imports).
@@ -120,6 +121,7 @@ int main(int argc, char** argv) {
         cfg = ps->config;
         sched_info = {{"name", ps->name}, {"hash", ps->hash}, {"file", schedule}, {"resolved", ps->resolved}};
     }
+    cfg.ga.seeding.neighbor_dir = neighbors;  // GA seeding reads N+1 / N-1 from here (default best/)
     cfg.wall_seconds = time_s;
     cfg.max_kicks = kicks;
 

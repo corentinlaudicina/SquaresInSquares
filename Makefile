@@ -34,13 +34,13 @@ SHRINK_SRC   := $(CORE) $(RELAX) $(LNM) src/main_shrink.cpp
 COMPRESS_SRC := $(CORE) $(RELAX) $(LNM) src/main_compress.cpp
 # The engine: the protocols as a library, legalization, sqpack/1 I/O. See docs/AUDIT.md.
 # The population layer: penalty kernel, capped L-BFGS, batch backend.
-POP_LIB := src/pop/penalty.cpp src/pop/relax_capped.cpp src/pop/backend.cpp src/pop/moves.cpp src/pop/diversity.cpp src/pop/ga.cpp
-ENGINE_LIB := src/legalize.cpp src/engine/protocol.cpp src/engine/solution_io.cpp src/engine/schedule.cpp
+POP_LIB := src/pop/penalty.cpp src/pop/relax_capped.cpp src/pop/backend.cpp src/pop/moves.cpp src/pop/diversity.cpp src/pop/seeding.cpp src/pop/ga.cpp src/engine/solution_io.cpp
+ENGINE_LIB := src/legalize.cpp src/engine/protocol.cpp src/engine/schedule.cpp
 ENGINE_SRC := $(CORE) $(RELAX) $(LNM) $(ENGINE_LIB) $(POP_LIB) src/main_engine.cpp
 LEGALIZE_SRC := $(CORE) $(RELAX) src/legalize.cpp tests/test_legalize.cpp
-BENCH_SRC := $(CORE) $(RELAX) src/legalize.cpp $(POP_LIB) src/engine/solution_io.cpp src/bench_relax.cpp
-GA_SRC := $(CORE) $(RELAX) src/legalize.cpp $(POP_LIB) tests/test_ga.cpp
-POP_SRC := $(CORE) $(RELAX) src/legalize.cpp $(POP_LIB) tests/test_pop.cpp
+BENCH_SRC := $(CORE) $(RELAX) $(LNM) src/legalize.cpp $(POP_LIB) src/bench_relax.cpp
+GA_SRC := $(CORE) $(RELAX) $(LNM) src/legalize.cpp $(POP_LIB) tests/test_ga.cpp
+POP_SRC := $(CORE) $(RELAX) $(LNM) src/legalize.cpp $(POP_LIB) tests/test_pop.cpp
 SCHEDULE_SRC := $(CORE) $(RELAX) $(LNM) src/legalize.cpp $(POP_LIB) src/engine/protocol.cpp src/engine/schedule.cpp tests/test_schedule.cpp
 # shortcut: stamped when main_engine.o is compiled, so it can lag a commit; `make clean engine` before a release run.
 GIT_REV := $(shell git describe --always --dirty 2>/dev/null || echo unknown)
