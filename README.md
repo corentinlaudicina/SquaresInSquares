@@ -70,14 +70,10 @@ supply your own starts (legacy `.cfg` records in `data/init_external/nNNNN.cfg`,
 
 ## How this was built
 
-The project, its goals, the architecture and every decision were Corentin Laudicina's: the phase plan,
+The project, its goals, the architecture and every decision are mine: the phase plan,
 the validity standard, keeping the symmetric start, which results to trust and what to merge. Most of the
-code, tests and documentation were written by Claude (Anthropic's model, through Claude Code) under that
-direction, step by step. Each step was checked with tests, and each search method was kept only if it
-beat the baseline on a fixed benchmark. Every packing the system keeps is checked by a validator that
-shares no code with the search engine. At run time the daily planner is also a Claude call; it has no
-tools, and a script validates its plans. Commits are authored by Corentin and carry a `Co-Authored-By:
-Claude` line.
+code, tests and documentation were written by Claude (Anthropic's model, through Claude Code) under my
+direction, step by step. Each step was checked with tests. At run time the daily planner is also a Claude call. Commits are authored by Corentin and carry a `Co-Authored-By: Claude` line.
 
 ## License
 
