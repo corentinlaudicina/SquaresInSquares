@@ -65,6 +65,7 @@ claude                              # once: log the CLI in
 tools/daily.sh                      # a cycle by hand: digest -> plan -> check -> runner until 06:40
 ```
 Only N marked `open` in `data/known_optima_1_1000.csv` are ever queued. Details: `docs/PLANNER.md`.
+Watch it: `python3 tools/status.py` (one screen; `watch -n 60 python3 tools/status.py` to keep it open).
 
 ## Benchmark
 ```sh
