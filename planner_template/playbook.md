@@ -4,7 +4,7 @@ Evidence-backed rules. The planner appends a line only for a confirmed hypothesi
 Initial rules from the Phase 3 gates (docs/AUDIT.md section 15; 20 N x 2 seeds x 45 s per run):
 
 - **Production schedule: `schedules/ga-explore.json` for every N** (since 2026-11-15, Corentin's call):
-  6 seeded islands on a ring, the adaptive ratchet, large moves (destroy, strip, corner) and 2 explorer
+  7 seeded islands on a ring (one per seed source), the adaptive ratchet, large moves (destroy, strip, corner) and 2 explorer
   slots per island. The machine enforces an island GA for exploit and explore jobs and focuses on N > 300.
 - `ga-seeded-adapt` (the same without large moves and explorers) collapsed onto the record within minutes:
   every island's champion identical to it. It only polishes. Whether ga-explore improves best/ more often

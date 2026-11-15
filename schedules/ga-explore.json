@@ -1,7 +1,7 @@
 {
   "schema": "sqpack.schedule/1",
   "name": "ga-explore",
-  "description": "ga-seeded-adapt plus exploration: large moves (destroy, strip, corner) with stratified filters and 3x rough relaxation, 2 explorer slots per island (age 30), islands reset from their own seed source. Candidate production schedule.",
+  "description": "ga-seeded-adapt plus exploration: large moves (destroy, strip, corner) with stratified filters and 3x rough relaxation, 2 explorer slots per island (age 30), islands reset from their own seed source. Production schedule. 7 islands, one per seed source (start, up:rattler, up:contact1, up:contact2, down, lattice:grid, lattice:diagonal).",
   "mode": "ga",
   "start": {
     "mirror": false
@@ -33,7 +33,7 @@
       "strip": 0.08,
       "corner": 0.07
     },
-    "islands": 6,
+    "islands": 7,
     "topology": "ring",
     "stratify": true,
     "large_relax": 3.0,
