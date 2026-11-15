@@ -55,4 +55,6 @@ cp queue.json "$P/plans/$DAY.queue.json"
 # 5. run until tomorrow's deadline
 nohup "$PY" tools/runner.py --queue queue.json --workers "$WORKERS" --until "$UNTIL" >> "$P/runner.log" 2>&1 &
 echo $! > "$P/runner.pid"
+# macOS: no idle sleep while the runner lives (a closed laptop lid still sleeps unless on power + display)
+command -v caffeinate >/dev/null && nohup caffeinate -i -w "$(cat "$P/runner.pid")" >/dev/null 2>&1 &
 echo "runner started (pid $(cat "$P/runner.pid"), $WORKERS workers, no new job after $UNTIL)"
