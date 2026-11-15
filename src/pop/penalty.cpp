@@ -18,26 +18,21 @@ inline double sgn(double v) { return (v > 0.0) - (v < 0.0); }
 // edge directions of both squares, so n itself turns with its owner O: dn/dtheta_O = perp(n).
 double pair_depth(const double* xyt, const Workspace& ws, int i, int j, double* g) {
     const int idx[2] = {i, j};
+    // Pass 1: the separation distance along each of the 4 axes, no derivatives. Any separating axis
+    // ends it; otherwise the smallest distance (first one on ties) is the depth.
     double best = 1e300;
-    double bg[6] = {};
+    int best_o = 0, best_e = 0, best_up = 0;
     for (int o = 0; o < 2; ++o) {              // axis owner
         for (int e = 0; e < 2; ++e) {          // which of its two edge normals
             const double co = ws.c[static_cast<size_t>(idx[o])], so = ws.s[static_cast<size_t>(idx[o])];
             const double nx = e == 0 ? co : -so, ny = e == 0 ? so : co;
-            const double px = -ny, py = nx;  // perp(n) = dn/dtheta_owner
-            double m[2], r[2], dm[2][6] = {}, dr[2][6] = {};
+            double m[2], r[2];
             for (int q = 0; q < 2; ++q) {
                 const size_t k = static_cast<size_t>(idx[q]);
                 const double x = xyt[3 * k], y = xyt[3 * k + 1], c = ws.c[k], s = ws.s[k];
                 m[q] = nx * x + ny * y;
-                dm[q][3 * q] = nx;
-                dm[q][3 * q + 1] = ny;
-                dm[q][3 * o + 2] += px * x + py * y;
                 const double t1 = nx * c + ny * s, t2 = -nx * s + ny * c;
                 r[q] = 0.5 * (std::abs(t1) + std::abs(t2));
-                // own rotation: dt1 = t2, dt2 = -t1; owner rotation: perp(n) . a1, perp(n) . a2
-                dr[q][3 * q + 2] += 0.5 * (sgn(t1) * t2 - sgn(t2) * t1);
-                dr[q][3 * o + 2] += 0.5 * (sgn(t1) * (px * c + py * s) + sgn(t2) * (-px * s + py * c));
             }
             // Distance to separate along n: push one way (hi_0 - lo_1) or the other (hi_1 - lo_0).
             // Equal to the interval overlap unless one interval contains the other.
@@ -47,11 +42,34 @@ double pair_depth(const double* xyt, const Workspace& ws, int i, int j, double* 
             if (ov <= 0.0) return 0.0;
             if (ov < best) {
                 best = ov;
-                for (int k = 0; k < 6; ++k) bg[k] = dm[up][k] + dr[up][k] - dm[lo][k] + dr[lo][k];
+                best_o = o;
+                best_e = e;
+                best_up = up;
             }
         }
     }
-    for (int k = 0; k < 6; ++k) g[k] = bg[k];
+    if (!g) return best;
+
+    // Pass 2: the gradient of the winning axis only. Along a unit axis n, square P covers
+    // [m - r, m + r] with m = n . centre_P and r = (|n . a1| + |n . a2|) / 2, a1 = (c, s), a2 = (-s, c)
+    // its edge directions; n turns with its owner O, dn/dtheta_O = perp(n).
+    const int o = best_o, e = best_e, up = best_up, lo = 1 - up;
+    const double co = ws.c[static_cast<size_t>(idx[o])], so = ws.s[static_cast<size_t>(idx[o])];
+    const double nx = e == 0 ? co : -so, ny = e == 0 ? so : co;
+    const double px = -ny, py = nx;  // perp(n) = dn/dtheta_owner
+    double dm[2][6] = {}, dr[2][6] = {};
+    for (int q = 0; q < 2; ++q) {
+        const size_t k = static_cast<size_t>(idx[q]);
+        const double x = xyt[3 * k], y = xyt[3 * k + 1], c = ws.c[k], s = ws.s[k];
+        dm[q][3 * q] = nx;
+        dm[q][3 * q + 1] = ny;
+        dm[q][3 * o + 2] += px * x + py * y;
+        const double t1 = nx * c + ny * s, t2 = -nx * s + ny * c;
+        // own rotation: dt1 = t2, dt2 = -t1; owner rotation: perp(n) . a1, perp(n) . a2
+        dr[q][3 * q + 2] += 0.5 * (sgn(t1) * t2 - sgn(t2) * t1);
+        dr[q][3 * o + 2] += 0.5 * (sgn(t1) * (px * c + py * s) + sgn(t2) * (-px * s + py * c));
+    }
+    for (int k = 0; k < 6; ++k) g[k] = dm[up][k] + dr[up][k] - dm[lo][k] + dr[lo][k];
     return best;
 }
 
@@ -163,7 +181,7 @@ CostInfo cost_grad(const Packing& p, Penalty pen, Workspace& ws, double* grad) {
         const double dx = xyt[3 * a] - xyt[3 * b], dy = xyt[3 * a + 1] - xyt[3 * b + 1];
         if (dx * dx + dy * dy >= kReach * kReach) return;
         double g[6];
-        const double d = pair_depth(xyt, ws, i, j, g);
+        const double d = pair_depth(xyt, ws, i, j, grad ? g : nullptr);
         if (d <= 0.0) return;
         info.cost += d * d;
         info.max_depth = std::max(info.max_depth, d);
