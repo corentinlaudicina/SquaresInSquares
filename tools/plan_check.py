@@ -137,9 +137,19 @@ def check_and_build(plan, root, engine, today):
             experiments += cost * len(ns)
         jobs.append({"N": ns if len(ns) > 1 else ns[0], "schedule": sched, "time": t, "tag": tag,
                      "seeds": [stamp * 10 + k for k in range(seeds)]})
+    # Only the experiment cap is trimmed (last N of the last experiment first): losing a whole day's plan to a 1% excess is worse.
+    while experiments > 0.25 * max(total, 1.0):
+        j = next((j for j in reversed(jobs) if re.fullmatch(r"H\d+", j["tag"]) and isinstance(j["N"], list) and len(j["N"]) > 1), None)
+        if j is None:
+            break
+        n, cost = j["N"].pop(), j["time"] * len(j["seeds"])
+        total -= cost
+        experiments -= cost
+        per_n[n] -= cost
+        warnings.append(f"trimmed N={n} from {j['tag']} (experiments were over 25% of the plan)")
     if not jobs:
         errs.append("no jobs")
-    budget = m["budget_hours"] * 3600 * m["workers"]
+    budget =m["budget_hours"] * 3600 * m["workers"]
     if total > budget * 1.05:
         errs.append(f"budget: {total / 3600:.1f} job-hours asked, {budget / 3600:.1f} available")
     if per_n and total and max(per_n.values()) > 0.2 * max(total, budget * 0.5):

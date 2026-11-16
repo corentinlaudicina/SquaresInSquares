@@ -87,6 +87,13 @@ class Planner(unittest.TestCase):
         self.assertTrue(any("experiments" in e for e in self.check({"jobs": [
             {**base, "tag": "H1", "N": "5-9"}, {**base, "N": 90}]})[2]))
 
+    def test_experiment_cap_trims(self):  # 500 of 1500 job-seconds are experiments: drop N from the end until <= 25%
+        base = {"N": "5-9", "schedule": "schedules/ga.json", "time": 100, "seeds": 1, "tag": "exploit"}
+        q, _, e = self.check({"jobs": [base, {**base, "N": "5-9"}, {**base, "tag": "H1"}]})
+        self.assertEqual(e, [])
+        self.assertEqual(q["jobs"][-1]["N"], [5, 6, 7])
+        self.assertEqual(sum("trimmed" in w for w in q["warnings"]), 2)
+
     @unittest.skipUnless(ENGINE.exists(), "make engine first")
     def test_variants(self):
         v = {"name": "ga-big", "base": "schedules/ga.json", "changes": {"ga.offspring": 240}, "why": "w"}
