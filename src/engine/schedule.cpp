@@ -138,6 +138,8 @@ const std::vector<Field>& fields() {
         BOOL("ga.stratify", ga.stratify),
         NUM("ga.large_relax", ga.large_relax, true),
         INT("ga.explorers", ga.explorers, false),
+        NUM("ga.ladder", ga.ladder, false),
+        INT("ga.swap_every", ga.swap_every, false),
         INT("ga.explorer_age", ga.explorer_age, true),
         BOOL("island.reset_from_source", ga.island_reset_source),
         NUM("ga.move.snap_prob", ga.moves.snap_prob, true),

@@ -1,0 +1,73 @@
+{
+  "schema": "sqpack.schedule/1",
+  "name": "ga-tempering",
+  "description": "ga-explore plus a tempering ladder: island i ratchets with steps scaled by 2^(i-3) (low islands polish, high ones take big steps), and every 5 generations neighbouring islands exchange populations when the higher one has fitted a smaller box. Experimental; production is ga-explore. Move weights from measured beat-parent rates (N=734: relocate, destroy and strip beat their parent in about 0.1-0.3% of tries, jiggles and corner in 6-7%); the large moves keep a small weight because they feed the explorers.",
+  "mode": "ga",
+  "start": {
+    "mirror": false
+  },
+  "ga": {
+    "population": 7,
+    "offspring": 27,
+    "prefilter": 0.6,
+    "fine_frac": 0.5,
+    "threads": 4,
+    "penalty": "depth2",
+    "history": 3,
+    "tol": 1e-09,
+    "rough_cap": 0.05,
+    "rough_iters": 100,
+    "fine_cap": 0.0125,
+    "fine_iters": 150,
+    "fine_stages": 3,
+    "init_jiggle": 0.02,
+    "moves": {
+      "relocate": 0.02,
+      "jiggle_small": 0.22,
+      "jiggle_large": 0.15,
+      "cluster": 0.12,
+      "twist": 0.08,
+      "translate": 0.07,
+      "crossover": 0.16,
+      "destroy": 0.03,
+      "strip": 0.03,
+      "corner": 0.12
+    },
+    "islands": 7,
+    "topology": "ring",
+    "stratify": true,
+    "large_relax": 3.0,
+    "explorers": 2,
+    "explorer_age": 30,
+    "ladder": 2.0,
+    "swap_every": 5
+  },
+  "ratchet": {
+    "shrink": 1e-06,
+    "adapt": true,
+    "min": 1e-09,
+    "max": 0.0002,
+    "up": 1.5,
+    "down": 0.5,
+    "patience": 8
+  },
+  "diversity": {
+    "elite": 1.0,
+    "threshold": 0.05,
+    "hist_threshold": 0.05,
+    "metric": "auto",
+    "assign_max_n": 40
+  },
+  "island": {
+    "patience": 30,
+    "threshold": 0.001,
+    "reset_from_source": true
+  },
+  "seed": {
+    "up": true,
+    "up_count": 2,
+    "down": true,
+    "down_tries": 400,
+    "lattice": true
+  }
+}

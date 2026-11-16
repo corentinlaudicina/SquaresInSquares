@@ -1,7 +1,7 @@
 {
   "schema": "sqpack.schedule/1",
   "name": "ga-explore",
-  "description": "ga-seeded-adapt plus exploration: large moves (destroy, strip, corner) with stratified filters and 3x rough relaxation, 2 explorer slots per island (age 30), islands reset from their own seed source. Production schedule. 7 islands, one per seed source (start, up:rattler, up:contact1, up:contact2, down, lattice:grid, lattice:diagonal).",
+  "description": "ga-seeded-adapt plus exploration: large moves (destroy, strip, corner) with stratified filters and 3x rough relaxation, 2 explorer slots per island (age 30), islands reset from their own seed source. Production schedule. 7 islands, one per seed source (start, up:rattler, up:contact1, up:contact2, down, lattice:grid, lattice:diagonal). Move weights from measured beat-parent rates (N=734: relocate, destroy and strip beat their parent in about 0.1-0.3% of tries, jiggles and corner in 6-7%); the large moves keep a small weight because they feed the explorers.",
   "mode": "ga",
   "start": {
     "mirror": false
@@ -22,16 +22,16 @@
     "fine_stages": 3,
     "init_jiggle": 0.02,
     "moves": {
-      "relocate": 0.08,
-      "jiggle_small": 0.17,
-      "jiggle_large": 0.1,
-      "cluster": 0.1,
+      "relocate": 0.02,
+      "jiggle_small": 0.22,
+      "jiggle_large": 0.15,
+      "cluster": 0.12,
       "twist": 0.08,
-      "translate": 0.08,
-      "crossover": 0.12,
-      "destroy": 0.12,
-      "strip": 0.08,
-      "corner": 0.07
+      "translate": 0.07,
+      "crossover": 0.16,
+      "destroy": 0.03,
+      "strip": 0.03,
+      "corner": 0.12
     },
     "islands": 7,
     "topology": "ring",

@@ -128,7 +128,11 @@ def view_one(fig, p):
                        f"penalty {i['cost']:.1e}, depth {i['depth']:.1e}", best))
         if "explorer" in i:
             e = i["explorer"]
-            panels.append((f"exp{k}", e["squares"], i["h"], f"island {k}: explorer, age {e['age']}\npenalty {e['cost']:.1e}", best))
+            fit = f", fitted {e['fit_h']:.5f}" if e.get("fit_h", math.inf) < math.inf else ", not fitted yet"
+            eh = e.get("h", i["h"])  # an explorer has its own box; compare in the same scale or everything looks moved
+            ref = [(x * eh / i["h"], y * eh / i["h"], t) for x, y, t in i["squares"]]
+            panels.append((f"exp{k}", e["squares"], eh,
+                           f"island {k}: explorer, own box {eh:.5f}{fit}\npenalty {e['cost']:.1e}", ref))
     cols = min(len(panels), 5)
     rows = math.ceil(len(panels) / cols)
     for k, (key, sq, side, title, ref) in enumerate(panels):

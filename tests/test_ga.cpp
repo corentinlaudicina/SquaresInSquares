@@ -121,6 +121,52 @@ void test_small_ga_is_legal_and_thread_independent() {
                 a.best_side, a.telemetry["side"]["start_legal"].get<double>(), a.telemetry["ga"]["ratchets"].get<int>());
 }
 
+void test_duplicate_islands() {
+    const auto seed = std::optional<System>(grid_start(11));
+    GAConfig cfg;
+    cfg.population = 4;
+    cfg.offspring = 8;
+    cfg.islands = 3;
+    cfg.init_jiggle = 0.0;     // identical islands from the start
+    cfg.island_patience = 1000;  // no stall resets: they would keep every island younger than the duplicate grace (10 generations)
+    cfg.moves.weight = {0, 0.01, 0, 0, 0, 0, 0};  // near-no-op moves: the champions stay the same arrangement
+    cfg.threads = 1;
+    const GAOutcome a = run_ga(*seed, cfg, 3, 0.0, 12);
+    cfg.threads = 4;
+    const GAOutcome b = run_ga(*seed, cfg, 3, 0.0, 12);
+    assert(a.telemetry["ga"]["dup_resets"].get<long>() > 0);  // three islands on one arrangement: the worse ones are reseeded
+    assert(a.telemetry["ga"]["dup_resets"] == b.telemetry["ga"]["dup_resets"] && a.best_side == b.best_side);
+    assert(strict_report(a.best).ok());
+    std::printf("  duplicate islands: %ld duplicate resets in 12 generations, same on 1 and 4 threads\n", a.telemetry["ga"]["dup_resets"].get<long>());
+}
+
+void test_tempering() {
+    const auto seed = std::optional<System>(grid_start(11));
+    GAConfig cfg;
+    cfg.population = 8;
+    cfg.offspring = 24;
+    cfg.islands = 3;
+    cfg.ladder = 2.0;
+    cfg.swap_every = 1;
+    cfg.moves.weight = {0.1, 0.2, 0.1, 0.1, 0.1, 0.1, 0.3};
+    cfg.threads = 1;
+    const GAOutcome a = run_ga(*seed, cfg, 5, 0.0, 12);
+    cfg.threads = 4;
+    const GAOutcome b = run_ga(*seed, cfg, 5, 0.0, 12);
+    assert(a.best_side == b.best_side);  // swaps are deterministic
+    assert(a.telemetry["ga"]["swaps"] == b.telemetry["ga"]["swaps"]);
+    assert(strict_report(a.best).ok());
+    long fined = 0, beat = 0;
+    for (const auto& [name, m] : a.telemetry["ga"]["moves"].items()) {
+        fined += m["fined"].get<long>();
+        beat += m["beat_parent"].get<long>();
+        assert(m["beat_parent"].get<long>() <= m["fined"].get<long>() && m["fined"].get<long>() <= m["relaxed"].get<long>());
+    }
+    assert(fined > 0);
+    std::printf("  tempering: ladder 2, %ld swaps, %ld of %ld fine-relaxed children beat their parent, same on 1 and 4 threads\n",
+                a.telemetry["ga"]["swaps"].get<long>(), beat, fined);
+}
+
 void test_islands() {
     const auto seed = std::optional<System>(grid_start(11));
     GAConfig cfg;
@@ -232,6 +278,8 @@ int main() {
     test_selection_spreads();
     test_small_ga_is_legal_and_thread_independent();
     test_islands();
+    test_tempering();
+    test_duplicate_islands();
     test_seeding();
     test_adaptive_ratchet_polishes();
     test_explorers_and_large_moves();

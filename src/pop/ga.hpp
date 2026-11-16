@@ -77,6 +77,12 @@ struct GAConfig {
                                   // large moves (huge unrelaxed penalty) are not always discarded first
     double large_relax = 1.0;     // rough-relaxation budget multiplier for large-move children
     int explorers = 0;            // population slots per island kept for large-move children and their
+    // Tempering ladder: island i's ratchet steps (min and max) are scaled by ladder^(i - (K-1)/2), so the low
+    // islands polish and the high ones take big steps. Every swap_every generations a neighbouring pair
+    // EXCHANGES populations if the higher (more aggressive) one has the smaller fitted box: nothing is
+    // copied, so no structure is lost. ladder 1 and swap_every 0 = off.
+    double ladder = 1.0;
+    long swap_every = 0;
     long explorer_age = 30;       // descendants younger than this, even when they score worse than the elite
     bool island_reset_source = false;  // a stalled island restarts from its own seed source, not the record
 
